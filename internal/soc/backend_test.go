@@ -1,4 +1,4 @@
-gopackage soc
+package soc
 
 import (
 	"context"
