@@ -46,6 +46,37 @@ func alertPayload(id string, level int, agentID, sourceIP string) map[string]any
 	}
 }
 
+func TestParseAlertTimestampAcceptsRFC3339AndCompactOffset(t *testing.T) {
+	tests := []struct {
+		name      string
+		timestamp string
+		want      time.Time
+	}{
+		{
+			name:      "RFC3339",
+			timestamp: "2026-10-27T15:14:03.248+01:00",
+			want:      time.Date(2026, 10, 27, 14, 14, 3, 248_000_000, time.UTC),
+		},
+		{
+			name:      "Wazuh compact offset",
+			timestamp: "2026-10-27T15:14:03.248+0100",
+			want:      time.Date(2026, 10, 27, 14, 14, 3, 248_000_000, time.UTC),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := parseAlertTimestamp(test.timestamp)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !got.UTC().Equal(test.want) {
+				t.Fatalf("parsed timestamp = %s, want %s", got.UTC(), test.want)
+			}
+		})
+	}
+}
+
 func TestIngestGroupsAlertsAndDeduplicatesWazuhIDs(t *testing.T) {
 	backend := testBackend(t, "")
 	ctx := context.Background()

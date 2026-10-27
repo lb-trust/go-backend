@@ -263,10 +263,10 @@ func normalizeAlert(raw map[string]any) (normalizedAlert, error) {
 	timestamp := firstString(raw["timestamp"], raw["@timestamp"])
 	occurredAt := time.Now().UTC()
 	if timestamp != "" {
-		parsed, err := time.Parse(time.RFC3339Nano, timestamp)
+		parsed, err := parseAlertTimestamp(timestamp)
 		if err != nil {
 			return normalizedAlert{}, &invalidAlertError{
-				err: fmt.Errorf("timestamp doit être une date RFC3339: %w", err),
+				err: fmt.Errorf("timestamp doit être une date RFC3339 ou un timestamp Wazuh avec décalage compact: %w", err),
 			}
 		}
 		occurredAt = parsed.UTC()
@@ -295,6 +295,14 @@ func normalizeAlert(raw map[string]any) (normalizedAlert, error) {
 		Location:    firstString(raw["location"]),
 		RawJSON:     string(rawJSON),
 	}, nil
+}
+
+func parseAlertTimestamp(timestamp string) (time.Time, error) {
+	parsed, err := time.Parse(time.RFC3339Nano, timestamp)
+	if err == nil {
+		return parsed, nil
+	}
+	return time.Parse("2006-01-02T15:04:05.999999999-0700", timestamp)
 }
 
 func (b *Backend) IngestAlert(ctx context.Context, tenantID string, raw map[string]any) (Alert, bool, error) {
