@@ -1,5 +1,6 @@
 /soc.db
 /soc.db-shm
 /soc.db-wal
+/.soc-api-token
 /bin/
 /coverage.out

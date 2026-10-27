@@ -16,10 +16,14 @@ import (
 
 func (b *Backend) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("GET /", dashboardHandler())
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	mux.Handle("GET /api/dashboard", b.authenticate(http.HandlerFunc(b.dashboardHandler)))
+	mux.Handle("GET /api/control/ai", b.authenticate(http.HandlerFunc(b.aiControlHandler)))
+	mux.Handle("PATCH /api/control/ai", b.authenticate(http.HandlerFunc(b.setAIControlHandler)))
+	mux.Handle("POST /api/incidents/{id}/queue", b.authenticate(http.HandlerFunc(b.queueIncidentHandler)))
 	mux.Handle("GET /api/alerts", b.authenticate(http.HandlerFunc(b.listAlertsHandler)))
 	mux.Handle("POST /api/alerts", b.authenticate(http.HandlerFunc(b.ingestAlertHandler)))
 	mux.Handle("GET /api/incidents", b.authenticate(http.HandlerFunc(b.listIncidentsHandler)))
@@ -35,6 +39,61 @@ func (b *Backend) Handler() http.Handler {
 		}()
 		mux.ServeHTTP(w, r)
 	})
+}
+
+func (b *Backend) aiControlHandler(w http.ResponseWriter, r *http.Request) {
+	control, err := b.AIControl(r.Context(), tenantFromContext(r.Context()))
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, control)
+}
+
+func (b *Backend) setAIControlHandler(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := decodeBody(w, r, &payload); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if payload.Enabled == nil {
+		writeError(w, http.StatusBadRequest, "le champ enabled est obligatoire")
+		return
+	}
+	if err := b.SetAIEnabled(r.Context(), *payload.Enabled); err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	control, err := b.AIControl(r.Context(), tenantFromContext(r.Context()))
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, control)
+}
+
+func (b *Backend) queueIncidentHandler(w http.ResponseWriter, r *http.Request) {
+	err := b.QueueIncidentAnalysis(r.Context(), tenantFromContext(r.Context()), r.PathValue("id"))
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "incident introuvable")
+		return
+	}
+	if errors.Is(err, errAIJobInProgress) {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	control, err := b.AIControl(r.Context(), tenantFromContext(r.Context()))
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, control)
 }
 
 func (b *Backend) authenticate(next http.Handler) http.Handler {
@@ -174,6 +233,15 @@ func (b *Backend) updateIncidentHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 func (b *Backend) analyzeIncidentHandler(w http.ResponseWriter, r *http.Request) {
+	enabled, err := b.AIEnabled(r.Context())
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	if !enabled {
+		writeError(w, http.StatusConflict, "l'analyse IA est en pause")
+		return
+	}
 	incident, err := b.GetIncident(r.Context(), tenantFromContext(r.Context()), r.PathValue("id"))
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "incident introuvable")

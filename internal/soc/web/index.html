@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Console SOC</title>
+  <link rel="stylesheet" href="/assets/dashboard.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">GO SOC BACKEND</p>
+        <h1>Console de supervision</h1>
+      </div>
+      <span class="connection" id="connection-state">Déconnecté</span>
+    </header>
+
+    <section class="panel login-panel" id="login-panel">
+      <h2>Connexion au backend</h2>
+      <p>Saisissez le jeton API affiché dans les journaux au démarrage du serveur.</p>
+      <form id="login-form" class="login-form">
+        <label for="token">Jeton API</label>
+        <input id="token" name="token" type="password" autocomplete="current-password" required>
+        <button type="submit">Se connecter</button>
+      </form>
+      <p class="message" id="login-error" role="status"></p>
+    </section>
+
+    <div id="dashboard" hidden>
+      <section class="panel control-panel">
+        <div>
+          <p class="eyebrow">ANALYSE AUTOMATIQUE</p>
+          <h2 id="ai-state">Chargement…</h2>
+          <p class="muted">La pause bloque les nouveaux envois. Une analyse déjà en cours peut se terminer.</p>
+        </div>
+        <button id="toggle-ai" type="button" class="secondary">Chargement…</button>
+      </section>
+
+      <section class="filters" aria-label="Filtres des incidents">
+        <label>
+          Statut
+          <select id="status-filter">
+            <option value="">Tous</option>
+            <option value="open">Ouvert</option>
+            <option value="investigating">En cours</option>
+            <option value="resolved">Résolu</option>
+            <option value="false_positive">Faux positif</option>
+          </select>
+        </label>
+        <label>
+          Sévérité
+          <select id="severity-filter">
+            <option value="">Toutes</option>
+            <option value="critical">Critique</option>
+            <option value="high">Haute</option>
+            <option value="medium">Moyenne</option>
+            <option value="low">Faible</option>
+          </select>
+        </label>
+        <label>
+          Niveau Wazuh minimum
+          <input id="level-filter" type="number" min="0" max="15" value="0">
+        </label>
+        <button id="refresh" type="button" class="secondary">Actualiser</button>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">ALERTES CORRÉLÉES</p>
+            <h2>Incidents</h2>
+          </div>
+          <span class="muted" id="incident-count"></span>
+        </div>
+        <p class="message" id="page-message" role="status"></p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Incident</th>
+                <th>Sévérité</th>
+                <th>Statut</th>
+                <th>Niveau</th>
+                <th>Occurrences</th>
+                <th>IA</th>
+              </tr>
+            </thead>
+            <tbody id="incidents-body"></tbody>
+          </table>
+        </div>
+        <p id="empty-incidents" class="empty" hidden>Aucun incident ne correspond à ces filtres.</p>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">TRAITEMENTS IA</p>
+            <h2>File d’analyse</h2>
+          </div>
+          <span class="muted">100 derniers traitements</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Incident</th>
+                <th>Sévérité</th>
+                <th>État</th>
+                <th>Tentatives</th>
+                <th>Origine</th>
+              </tr>
+            </thead>
+            <tbody id="queue-body"></tbody>
+          </table>
+        </div>
+        <p id="empty-queue" class="empty" hidden>La file est vide.</p>
+      </section>
+      <footer><button id="logout" type="button" class="link-button">Se déconnecter</button></footer>
+    </div>
+  </main>
+  <script src="/assets/dashboard.js" defer></script>
+</body>
+</html>

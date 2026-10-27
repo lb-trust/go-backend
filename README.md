@@ -28,28 +28,43 @@ Ce projet est distribué sous licence GPL-3.0 ; voir [LICENSE](./LICENSE).
 - Analyse manuelle d'un incident via Ollama.
 - Publication IRIS désactivée par défaut ; elle n'envoie que les analyses
   automatiques qualifiées, jamais les alertes brutes.
+- Tableau de bord web léger intégré, sans dépendance JavaScript externe :
+  filtrage des incidents, pause/reprise des analyses et mise en file forcée.
 
 ## Prérequis et lancement
 
-Go 1.24 ou plus récent est nécessaire. Dans PowerShell, configurez au minimum
-un jeton aléatoire associé à un identifiant client, puis démarrez le serveur :
+Go 1.24 ou plus récent est nécessaire. Démarrez simplement le serveur :
 
 ```powershell
-$env:SOC_TENANTS_JSON='{"remplacer-par-un-jeton-long-et-aleatoire":"client-a"}'
-$env:SOC_API_TOKEN='remplacer-par-un-jeton-long-et-aleatoire'
 go run .\cmd\soc-backend
 ```
+
+Au premier démarrage, un jeton API aléatoire de 20 caractères est créé pour le
+client `client-a` et affiché dans les journaux du serveur. Il est conservé dans
+`.soc-api-token` et réutilisé après un redémarrage. Gardez ce fichier secret et
+ne le partagez pas ; il est ignoré par Git. Pour régénérer le jeton, arrêtez le
+serveur, supprimez `.soc-api-token`, puis redémarrez-le. Pour une configuration
+multi-client ou un jeton géré par votre environnement, `SOC_TENANTS_JSON` reste
+disponible.
 
 Le serveur écoute sur `127.0.0.1:8080` et crée `soc.db` dans le répertoire
 courant. Il utilise HTTP sans chiffrement : gardez-le sur une interface de
 confiance, ou placez un reverse proxy HTTPS et un pare-feu devant lui. Ne
 l'exposez pas directement à Internet.
 
+Ouvrez `http://127.0.0.1:8080/` dans le navigateur de la VM et connectez-vous
+avec le jeton API généré. La page n'utilise aucun framework ni ressource externe.
+La pause IA est globale au backend, persistante après redémarrage, et ne bloque
+pas la collecte Wazuh. Les analyses en attente restent dans la file et seront
+traitées à la reprise ; une requête Ollama déjà démarrée peut se terminer.
+« Forcer l'analyse » remet l'incident en file, même s'il a déjà été analysé.
+
 ## Configuration
 
 | Variable | Défaut | Description |
 | --- | --- | --- |
-| `SOC_TENANTS_JSON` | requis | Objet JSON `jeton: identifiant_client`. |
+| `SOC_TENANTS_JSON` | généré automatiquement | Objet JSON `jeton: identifiant_client`; permet une configuration multi-client. |
+| `SOC_API_TOKEN_FILE` | `.soc-api-token` | Fichier local qui conserve le jeton généré automatiquement. |
 | `SOC_DB_PATH` | `soc.db` | Chemin de la base SQLite. |
 | `SOC_HOST` / `SOC_PORT` | `127.0.0.1` / `8080` | Adresse et port d'écoute. |
 | `WAZUH_SOURCES_JSON` | `[]` | Sources Wazuh Indexer à interroger. |
@@ -83,26 +98,30 @@ locaux avec certificats non approuvés.
 ## API
 
 Les routes `/api/...` attendent `Authorization: Bearer <jeton>` et ne renvoient
-que les données du client associé.
+que les données du client associé. Copiez le jeton affiché au démarrage :
+
+```powershell
+$env:SOC_API_TOKEN='coller-ici-le-jeton-affiche'
+$headers = @{ Authorization = "Bearer $env:SOC_API_TOKEN" }
+Invoke-RestMethod http://127.0.0.1:8080/api/dashboard -Headers $headers
+```
 
 | Méthode et route | Usage |
 | --- | --- |
 | `GET /health` | Santé du service, sans authentification. |
 | `GET /api/dashboard` | Compteurs et sévérités du client. |
+| `GET /api/control/ai` | État de la file IA et 100 derniers traitements. |
+| `PATCH /api/control/ai` | Pause/reprise globale, corps `{"enabled":false}` ou `{"enabled":true}`. |
 | `GET /api/alerts?limit=100&since=...` | Groupes d'alertes récents. `since` est RFC3339. |
 | `POST /api/alerts` | Ingestion d'une alerte JSON Wazuh. |
 | `GET /api/incidents?status=open&limit=100` | Liste d'incidents, avec statut facultatif. |
 | `GET /api/incidents/{id}` | Incident, alertes liées et feedback. |
 | `PATCH /api/incidents/{id}` | Modification de `status` et/ou ajout de `feedback`. |
 | `POST /api/incidents/{id}/analyze` | Analyse manuelle avec Ollama. |
+| `POST /api/incidents/{id}/queue` | Forcer une nouvelle analyse via la file persistante. |
 
 Statuts d'incident autorisés : `open`, `investigating`, `resolved` et
 `false_positive`. Exemple :
-
-```powershell
-$headers = @{ Authorization = "Bearer $env:SOC_API_TOKEN" }
-Invoke-RestMethod http://127.0.0.1:8080/api/dashboard -Headers $headers
-```
 
 ## Développement et tests
 

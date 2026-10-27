@@ -26,6 +26,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if config.GeneratedToken != "" {
+		log.Printf("Jeton API du client client-a : %s (conservé dans %s)",
+			config.GeneratedToken, config.TokenFilePath)
+	}
 	backend, err := soc.NewBackend(config)
 	if err != nil {
 		return err

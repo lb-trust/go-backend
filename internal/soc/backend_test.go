@@ -120,10 +120,160 @@ func TestLowSeverityThresholdQueuesAutomaticAnalysis(t *testing.T) {
 	}
 }
 
+func TestPausedAIWorkerKeepsForcedJobsQueued(t *testing.T) {
+	var calls atomic.Int32
+	ollama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		json.NewEncoder(w).Encode(map[string]string{"response": "Analyse"})
+	}))
+	defer ollama.Close()
+	backend := testBackend(t, ollama.URL)
+	ctx := context.Background()
+	if _, _, err := backend.IngestAlert(ctx, "tenant-a",
+		alertPayload("paused-event", highAlertLevel, "paused-agent", "203.0.113.10")); err != nil {
+		t.Fatal(err)
+	}
+	incidents, err := backend.ListIncidents(ctx, "tenant-a", "", 10)
+	if err != nil || len(incidents) != 1 {
+		t.Fatalf("incidents = %#v, error = %v", incidents, err)
+	}
+	if err := backend.SetAIEnabled(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.QueueIncidentAnalysis(ctx, "tenant-a", incidents[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.processNextAIJob(ctx); err != nil {
+		t.Fatal(err)
+	}
+	control, err := backend.AIControl(ctx, "tenant-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 0 || control.Enabled || len(control.Queue) != 1 || control.Queue[0].Status != "pending" {
+		t.Fatalf("paused AI unexpectedly processed its queue: calls=%d control=%#v", calls.Load(), control)
+	}
+	if err := backend.SetAIEnabled(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.processNextAIJob(ctx); err != nil {
+		t.Fatal(err)
+	}
+	control, err = backend.AIControl(ctx, "tenant-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 1 || len(control.Queue) != 1 || control.Queue[0].Status != "done" || !control.Queue[0].Forced {
+		t.Fatalf("forced job did not run after resume: calls=%d control=%#v", calls.Load(), control)
+	}
+}
+
+func TestAIPausePersistsAcrossBackendRestart(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "soc.db")
+	config := Config{
+		DatabasePath: databasePath,
+		Tenants:      map[string]string{"token-a": "tenant-a"},
+	}
+	first, err := NewBackend(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.SetAIEnabled(context.Background(), false); err != nil {
+		first.Close()
+		t.Fatal(err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := NewBackend(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	enabled, err := second.AIEnabled(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if enabled {
+		t.Fatal("AI pause was lost after restarting the backend")
+	}
+}
+
+func TestForceQueueReanalyzesCompletedIncidentAndChecksTenant(t *testing.T) {
+	backend := testBackend(t, "")
+	ctx := context.Background()
+	if _, _, err := backend.IngestAlert(ctx, "tenant-a",
+		alertPayload("finished-event", highAlertLevel, "finished-agent", "203.0.113.11")); err != nil {
+		t.Fatal(err)
+	}
+	incidents, err := backend.ListIncidents(ctx, "tenant-a", "", 10)
+	if err != nil || len(incidents) != 1 {
+		t.Fatalf("incidents = %#v, error = %v", incidents, err)
+	}
+	incidentID := incidents[0].ID
+	if _, err := backend.db.Exec(`UPDATE incident_ai_jobs SET status = 'done' WHERE incident_id = ?`, incidentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.db.Exec(`UPDATE incidents SET analysis = 'ancienne analyse' WHERE id = ?`, incidentID); err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.QueueIncidentAnalysis(ctx, "tenant-b", incidentID); err == nil {
+		t.Fatal("tenant-b must not be able to queue tenant-a's incident")
+	}
+	if err := backend.QueueIncidentAnalysis(ctx, "tenant-a", incidentID); err != nil {
+		t.Fatal(err)
+	}
+	var status string
+	var forced, attempts int
+	if err := backend.db.QueryRow(`SELECT status, forced, attempts FROM incident_ai_jobs WHERE incident_id = ?`,
+		incidentID).Scan(&status, &forced, &attempts); err != nil {
+		t.Fatal(err)
+	}
+	if status != "pending" || forced != 1 || attempts != 0 {
+		t.Fatalf("requeued job has state %q, forced=%d, attempts=%d", status, forced, attempts)
+	}
+	refreshed, err := backend.GetIncident(ctx, "tenant-a", incidentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Analysis != "" {
+		t.Fatalf("old analysis was not cleared before force reanalysis: %q", refreshed.Analysis)
+	}
+}
+
 func TestAPIRequiresTenantTokenAndReturnsTenantData(t *testing.T) {
 	backend := testBackend(t, "")
 	server := httptest.NewServer(backend.Handler())
 	defer server.Close()
+
+	pageRequest, err := http.NewRequest(http.MethodGet, server.URL+"/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	pageResponse, err := client.Do(pageRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pageResponse.StatusCode != http.StatusOK ||
+		!strings.Contains(pageResponse.Header.Get("Content-Security-Policy"), "default-src 'self'") {
+		pageResponse.Body.Close()
+		t.Fatalf("dashboard response status/security/location = %d / %q / %q",
+			pageResponse.StatusCode, pageResponse.Header.Get("Content-Security-Policy"), pageResponse.Header.Get("Location"))
+	}
+	pageResponse.Body.Close()
+	assetResponse, err := client.Get(server.URL + "/assets/dashboard.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assetResponse.StatusCode != http.StatusOK {
+		assetResponse.Body.Close()
+		t.Fatalf("dashboard JavaScript status = %d, want %d", assetResponse.StatusCode, http.StatusOK)
+	}
+	assetResponse.Body.Close()
 
 	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/alerts", jsonBody(alertPayload("evt", 5, "agent", "")))
 	if err != nil {
@@ -152,6 +302,40 @@ func TestAPIRequiresTenantTokenAndReturnsTenantData(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != http.StatusCreated {
 		t.Fatalf("authenticated status = %d, want %d", response.StatusCode, http.StatusCreated)
+	}
+	request, err = http.NewRequest(http.MethodPatch, server.URL+"/api/control/ai",
+		jsonBody(map[string]bool{"enabled": false}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer token-a")
+	request.Header.Set("Content-Type", "application/json")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("AI control status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	response.Body.Close()
+	incidents, err := backend.ListIncidents(context.Background(), "tenant-a", "", 10)
+	if err != nil || len(incidents) != 1 {
+		t.Fatalf("incidents = %#v, error = %v", incidents, err)
+	}
+	request, err = http.NewRequest(http.MethodPost,
+		server.URL+"/api/incidents/"+incidents[0].ID+"/analyze", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer token-a")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusConflict {
+		t.Fatalf("manual analysis while paused status = %d, want %d", response.StatusCode, http.StatusConflict)
 	}
 }
 

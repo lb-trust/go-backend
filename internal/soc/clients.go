@@ -108,9 +108,22 @@ func (b *Backend) StartAIWorker(ctx context.Context) {
 }
 
 func (b *Backend) processNextAIJob(ctx context.Context) error {
+	tx, err := b.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("démarrer la réservation d'une analyse: %w", err)
+	}
+	defer tx.Rollback()
+	var enabledValue string
+	if err := tx.QueryRowContext(ctx,
+		`SELECT value FROM soc_settings WHERE key = 'ai_enabled'`).Scan(&enabledValue); err != nil {
+		return fmt.Errorf("lire le réglage de la file IA: %w", err)
+	}
+	if enabledValue != "true" {
+		return nil
+	}
 	var jobID int64
 	var incidentID, tenantID string
-	err := b.db.QueryRowContext(ctx,
+	err = tx.QueryRowContext(ctx,
 		`SELECT j.id, j.incident_id, i.tenant_id
 		 FROM incident_ai_jobs j JOIN incidents i ON i.id = j.incident_id
 		 WHERE j.status = 'pending' AND j.next_attempt <= ?
@@ -122,7 +135,7 @@ func (b *Backend) processNextAIJob(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("rechercher une analyse à traiter: %w", err)
 	}
-	result, err := b.db.ExecContext(ctx,
+	result, err := tx.ExecContext(ctx,
 		`UPDATE incident_ai_jobs SET status = 'processing' WHERE id = ? AND status = 'pending'`,
 		jobID)
 	if err != nil {
@@ -134,6 +147,9 @@ func (b *Backend) processNextAIJob(ctx context.Context) error {
 	}
 	if claimed == 0 {
 		return nil
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("valider la réservation d'une analyse: %w", err)
 	}
 	if err := b.executeAIJob(ctx, incidentID, tenantID); err != nil {
 		var attempts int

@@ -189,11 +189,46 @@ CREATE TABLE IF NOT EXISTS incident_ai_jobs (
     incident_id TEXT NOT NULL UNIQUE REFERENCES incidents(id) ON DELETE CASCADE,
     status TEXT NOT NULL DEFAULT 'pending',
     attempts INTEGER NOT NULL DEFAULT 0,
+    forced INTEGER NOT NULL DEFAULT 0,
     next_attempt TEXT NOT NULL,
     created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS soc_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );`
 	if _, err := b.db.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("initialiser le schéma SQLite: %w", err)
+	}
+	var hasForcedColumn bool
+	columns, err := b.db.QueryContext(ctx, `PRAGMA table_info(incident_ai_jobs)`)
+	if err != nil {
+		return fmt.Errorf("vérifier le schéma de la file IA: %w", err)
+	}
+	for columns.Next() {
+		var index, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue sql.NullString
+		if err := columns.Scan(&index, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			columns.Close()
+			return fmt.Errorf("lire le schéma de la file IA: %w", err)
+		}
+		if name == "forced" {
+			hasForcedColumn = true
+		}
+	}
+	if err := columns.Close(); err != nil {
+		return fmt.Errorf("fermer le schéma de la file IA: %w", err)
+	}
+	if !hasForcedColumn {
+		if _, err := b.db.ExecContext(ctx,
+			`ALTER TABLE incident_ai_jobs ADD COLUMN forced INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("mettre à jour le schéma de la file IA: %w", err)
+		}
+	}
+	if _, err := b.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO soc_settings(key, value) VALUES('ai_enabled', 'true')`); err != nil {
+		return fmt.Errorf("initialiser les paramètres SOC: %w", err)
 	}
 	if _, err := b.db.ExecContext(ctx,
 		`UPDATE incident_ai_jobs SET status = 'pending' WHERE status = 'processing'`); err != nil {
