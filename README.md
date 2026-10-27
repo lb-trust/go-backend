@@ -47,13 +47,20 @@ serveur, supprimez `.soc-api-token`, puis redémarrez-le. Pour une configuration
 multi-client ou un jeton géré par votre environnement, `SOC_TENANTS_JSON` reste
 disponible.
 
-Le serveur écoute sur `127.0.0.1:8080` et crée `soc.db` dans le répertoire
-courant. Il utilise HTTP sans chiffrement : gardez-le sur une interface de
-confiance, ou placez un reverse proxy HTTPS et un pare-feu devant lui. Ne
-l'exposez pas directement à Internet.
+Le serveur écoute par défaut sur toutes les interfaces (`0.0.0.0:8080`) et
+crée `soc.db` dans le répertoire courant. Au démarrage, il affiche les URL du
+tableau de bord pour les adresses IPv4 détectées. Depuis une autre machine du
+même réseau, ouvrez `http://<IPv4 affichée>:8080/` et connectez-vous avec le
+jeton API généré.
 
-Ouvrez `http://127.0.0.1:8080/` dans le navigateur de la VM et connectez-vous
-avec le jeton API généré. La page n'utilise aucun framework ni ressource externe.
+Si la page ne répond pas, vérifiez que les deux machines sont sur le même
+réseau et que le pare-feu Windows autorise les connexions entrantes TCP sur le
+port 8080 (sur un réseau privé de confiance). Le serveur utilise HTTP sans
+chiffrement : ne l'exposez pas directement à Internet ; utilisez un reverse
+proxy HTTPS et un pare-feu si un accès plus large est nécessaire.
+
+Ouvrez `http://127.0.0.1:8080/` sur la machine qui exécute le serveur. La page
+n'utilise aucun framework ni ressource externe.
 La pause IA est globale au backend, persistante après redémarrage, et ne bloque
 pas la collecte Wazuh. Les analyses en attente restent dans la file et seront
 traitées à la reprise ; une requête Ollama déjà démarrée peut se terminer.
@@ -66,7 +73,7 @@ traitées à la reprise ; une requête Ollama déjà démarrée peut se terminer
 | `SOC_TENANTS_JSON` | généré automatiquement | Objet JSON `jeton: identifiant_client`; permet une configuration multi-client. |
 | `SOC_API_TOKEN_FILE` | `.soc-api-token` | Fichier local qui conserve le jeton généré automatiquement. |
 | `SOC_DB_PATH` | `soc.db` | Chemin de la base SQLite. |
-| `SOC_HOST` / `SOC_PORT` | `127.0.0.1` / `8080` | Adresse et port d'écoute. |
+| `SOC_HOST` / `SOC_PORT` | `0.0.0.0` / `8080` | Adresse et port d'écoute. Utilisez `127.0.0.1` pour limiter l'accès à la machine locale. |
 | `WAZUH_SOURCES_JSON` | `[]` | Sources Wazuh Indexer à interroger. |
 | `WAZUH_POLL_SECONDS` | `60` | Intervalle de collecte, minimum 15 secondes. |
 | `OLLAMA_URL` | `http://127.0.0.1:11434` | Instance Ollama. |

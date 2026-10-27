@@ -41,7 +41,7 @@ type WazuhSource struct {
 
 func LoadConfig() (Config, error) {
 	cfg := Config{
-		Host:              envOr("SOC_HOST", "127.0.0.1"),
+		Host:              envOr("SOC_HOST", "0.0.0.0"),
 		Port:              8080,
 		DatabasePath:      envOr("SOC_DB_PATH", "soc.db"),
 		TokenFilePath:     envOr("SOC_API_TOKEN_FILE", ".soc-api-token"),

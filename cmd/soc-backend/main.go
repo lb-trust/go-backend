@@ -54,6 +54,11 @@ func run() error {
 	serverDone := make(chan error, 1)
 	go func() {
 		log.Printf("Backend SOC à l'écoute sur %s", server.Addr)
+		if config.Host == "0.0.0.0" || config.Host == "::" {
+			logAccessURLs(config.Port)
+		} else {
+			log.Printf("Tableau de bord : http://%s/", server.Addr)
+		}
 		serverDone <- server.ListenAndServe()
 	}()
 
@@ -70,4 +75,31 @@ func run() error {
 		}
 	}
 	return nil
+}
+
+func logAccessURLs(port int) {
+	addresses, err := net.InterfaceAddrs()
+	if err != nil {
+		log.Printf("impossible de détecter les adresses réseau : %v", err)
+		return
+	}
+
+	found := false
+	for _, address := range addresses {
+		var ip net.IP
+		switch value := address.(type) {
+		case *net.IPNet:
+			ip = value.IP
+		case *net.IPAddr:
+			ip = value.IP
+		}
+		if ip == nil || ip.IsLoopback() || ip.To4() == nil {
+			continue
+		}
+		log.Printf("Tableau de bord (réseau) : http://%s:%d/", ip.String(), port)
+		found = true
+	}
+	if !found {
+		log.Printf("aucune adresse IPv4 réseau détectée ; vérifiez la configuration réseau")
+	}
 }

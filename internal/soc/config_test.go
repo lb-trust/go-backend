@@ -31,6 +31,9 @@ func loadConfigWithEnv(t *testing.T, tokenFile, tenantConfig string) Config {
 func TestLoadConfigGeneratesAndReusesAPIToken(t *testing.T) {
 	tokenFile := filepath.Join(t.TempDir(), "api-token")
 	first := loadConfigWithEnv(t, tokenFile, "")
+	if first.Host != "0.0.0.0" {
+		t.Fatalf("default host = %q, want 0.0.0.0", first.Host)
+	}
 	if !validAPIToken(first.GeneratedToken) {
 		t.Fatalf("generated token has an invalid shape: %q", first.GeneratedToken)
 	}
