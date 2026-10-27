@@ -1,0 +1,69 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/lb-trust/go-backend/internal/soc"
+)
+
+func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
+	config, err := soc.LoadConfig()
+	if err != nil {
+		return err
+	}
+	backend, err := soc.NewBackend(config)
+	if err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer func() {
+		stop()
+		backend.WaitBackground()
+		if err := backend.Close(); err != nil {
+			log.Printf("fermer la base SQLite: %v", err)
+		}
+	}()
+	backend.StartCollectors(ctx)
+	backend.StartAIWorker(ctx)
+
+	server := &http.Server{
+		Addr:              net.JoinHostPort(config.Host, fmt.Sprint(config.Port)),
+		Handler:           backend.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	serverDone := make(chan error, 1)
+	go func() {
+		log.Printf("Backend SOC à l'écoute sur %s", server.Addr)
+		serverDone <- server.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serverDone:
+		if !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("serveur HTTP: %w", err)
+		}
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("arrêter le serveur HTTP: %w", err)
+		}
+	}
+	return nil
+}

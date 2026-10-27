@@ -1,0 +1,5 @@
+/soc.db
+/soc.db-shm
+/soc.db-wal
+/bin/
+/coverage.out
