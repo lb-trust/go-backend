@@ -217,6 +217,10 @@ CREATE TABLE IF NOT EXISTS soc_settings (
 			hasForcedColumn = true
 		}
 	}
+	if err := columns.Err(); err != nil {
+		columns.Close()
+		return fmt.Errorf("lire le schéma de la file IA: %w", err)
+	}
 	if err := columns.Close(); err != nil {
 		return fmt.Errorf("fermer le schéma de la file IA: %w", err)
 	}
