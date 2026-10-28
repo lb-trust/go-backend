@@ -64,6 +64,22 @@
           <input id="level-filter" type="number" min="0" max="15" value="0">
         </label>
         <button id="refresh" type="button" class="secondary">Actualiser</button>
+        <details class="column-picker">
+          <summary class="secondary">Colonnes</summary>
+          <fieldset id="incident-columns" aria-label="Colonnes des incidents">
+            <label><input type="checkbox" value="incident"> Incident</label>
+            <label><input type="checkbox" value="severity"> Sévérité</label>
+            <label><input type="checkbox" value="status"> Statut</label>
+            <label><input type="checkbox" value="level"> Niveau Wazuh</label>
+            <label><input type="checkbox" value="occurrences"> Occurrences</label>
+            <label><input type="checkbox" value="agentGroups"> Groupe(s) de l’agent</label>
+            <label><input type="checkbox" value="agentName"> Nom de l’agent</label>
+            <label><input type="checkbox" value="agentIP"> IP de l’agent</label>
+            <label><input type="checkbox" value="sourceIP"> IP source</label>
+            <label><input type="checkbox" value="agentID"> ID de l’agent</label>
+            <label><input type="checkbox" value="ai"> IA</label>
+          </fieldset>
+        </details>
       </section>
 
       <section class="panel">
@@ -77,16 +93,7 @@
         <p class="message" id="page-message" role="status"></p>
         <div class="table-wrap">
           <table>
-            <thead>
-              <tr>
-                <th>Incident</th>
-                <th>Sévérité</th>
-                <th>Statut</th>
-                <th>Niveau</th>
-                <th>Occurrences</th>
-                <th>IA</th>
-              </tr>
-            </thead>
+            <thead id="incidents-head"></thead>
             <tbody id="incidents-body"></tbody>
           </table>
         </div>

@@ -59,6 +59,8 @@ type Alert struct {
 	Description    string          `json:"description"`
 	AgentID        string          `json:"agent_id,omitempty"`
 	AgentName      string          `json:"agent_name"`
+	AgentIP        string          `json:"agent_ip,omitempty"`
+	AgentGroups    []string        `json:"agent_groups"`
 	SourceIP       string          `json:"source_ip,omitempty"`
 	DestIP         string          `json:"dest_ip,omitempty"`
 	Location       string          `json:"location,omitempty"`
@@ -79,6 +81,9 @@ type Incident struct {
 	Severity    string    `json:"severity"`
 	Score       int       `json:"score"`
 	AgentID     string    `json:"agent_id,omitempty"`
+	AgentLabel  string    `json:"agent_name,omitempty"`
+	AgentIP     string    `json:"agent_ip,omitempty"`
+	AgentGroups []string  `json:"agent_groups"`
 	SourceIP    string    `json:"source_ip,omitempty"`
 	RuleLevel   int       `json:"rule_level"`
 	Occurrences int       `json:"occurrences"`
@@ -458,6 +463,10 @@ func (b *Backend) loadAlert(ctx context.Context, queryer queryer, tenantID, grou
 	alert.FirstSeen = parseStoredTime(firstSeen)
 	alert.LastSeen = parseStoredTime(lastSeen)
 	alert.Raw = json.RawMessage(raw)
+	_, alert.AgentIP, alert.AgentGroups, err = agentMetadata(alert.Raw)
+	if err != nil {
+		return Alert{}, fmt.Errorf("lire les informations de l'agent: %w", err)
+	}
 	alert.SourceIPCounts = make(map[string]int)
 	rows, err := queryer.QueryContext(ctx,
 		`SELECT source_ip, COUNT(*) FROM alert_events
@@ -610,8 +619,18 @@ func (b *Backend) ListAlerts(ctx context.Context, tenantID string, limit int, si
 
 func (b *Backend) ListIncidents(ctx context.Context, tenantID, status string, limit int) ([]Incident, error) {
 	query := `SELECT id, tenant_id, title, status, severity, score, agent_id, source_ip,
-	                 rule_level, occurrences, created_at, updated_at, feedback_json, analysis
-	          FROM incidents WHERE tenant_id = ?`
+	                 rule_level, occurrences, created_at, updated_at, feedback_json, analysis,
+	                 COALESCE((SELECT ag.agent_name FROM incident_alerts ia
+	                           JOIN alert_groups ag ON ag.id = ia.alert_id
+	                          WHERE ia.incident_id = i.id
+	                          ORDER BY ag.last_seen DESC
+	                           LIMIT 1), ''),
+	                 COALESCE((SELECT ag.raw_json FROM incident_alerts ia
+	                           JOIN alert_groups ag ON ag.id = ia.alert_id
+	                          WHERE ia.incident_id = i.id
+	                          ORDER BY ag.last_seen DESC
+	                           LIMIT 1), '{}')
+	          FROM incidents i WHERE i.tenant_id = ?`
 	args := []any{tenantID}
 	if status != "" {
 		query += ` AND status = ?`
@@ -637,16 +656,23 @@ func (b *Backend) ListIncidents(ctx context.Context, tenantID, status string, li
 
 func scanIncident(scanner interface{ Scan(...any) error }) (Incident, error) {
 	var incident Incident
-	var created, updated, feedback string
+	var created, updated, feedback, agentRaw string
 	if err := scanner.Scan(
 		&incident.ID, &incident.TenantID, &incident.Title, &incident.Status,
 		&incident.Severity, &incident.Score, &incident.AgentID, &incident.SourceIP,
 		&incident.RuleLevel, &incident.Occurrences, &created, &updated,
-		&feedback, &incident.Analysis); err != nil {
+		&feedback, &incident.Analysis, &incident.AgentLabel, &agentRaw); err != nil {
 		return Incident{}, fmt.Errorf("lire un incident: %w", err)
 	}
 	incident.CreatedAt = parseStoredTime(created)
 	incident.UpdatedAt = parseStoredTime(updated)
+	agentName, agentIP, agentGroups, err := agentMetadata(json.RawMessage(agentRaw))
+	if err != nil {
+		return Incident{}, fmt.Errorf("lire les informations de l'agent de l'incident: %w", err)
+	}
+	incident.AgentLabel = agentName
+	incident.AgentIP = agentIP
+	incident.AgentGroups = agentGroups
 	if err := json.Unmarshal([]byte(feedback), &incident.Feedback); err != nil {
 		return Incident{}, fmt.Errorf("décoder le feedback d'incident: %w", err)
 	}
@@ -659,8 +685,18 @@ func scanIncident(scanner interface{ Scan(...any) error }) (Incident, error) {
 func (b *Backend) GetIncident(ctx context.Context, tenantID, id string) (Incident, error) {
 	row := b.db.QueryRowContext(ctx,
 		`SELECT id, tenant_id, title, status, severity, score, agent_id, source_ip,
-		        rule_level, occurrences, created_at, updated_at, feedback_json, analysis
-		 FROM incidents WHERE tenant_id = ? AND id = ?`,
+		        rule_level, occurrences, created_at, updated_at, feedback_json, analysis,
+		        COALESCE((SELECT ag.agent_name FROM incident_alerts ia
+		                  JOIN alert_groups ag ON ag.id = ia.alert_id
+		                  WHERE ia.incident_id = i.id
+		                  ORDER BY ag.last_seen DESC
+		                  LIMIT 1), ''),
+		        COALESCE((SELECT ag.raw_json FROM incident_alerts ia
+		                  JOIN alert_groups ag ON ag.id = ia.alert_id
+		                  WHERE ia.incident_id = i.id
+		                  ORDER BY ag.last_seen DESC
+		                  LIMIT 1), '{}')
+		 FROM incidents i WHERE i.tenant_id = ? AND i.id = ?`,
 		tenantID, id)
 	incident, err := scanIncident(row)
 	if err != nil {
@@ -837,6 +873,28 @@ func nestedMap(value map[string]any, key string) map[string]any {
 		return nested
 	}
 	return map[string]any{}
+}
+
+func agentMetadata(raw json.RawMessage) (string, string, []string, error) {
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return "", "", nil, fmt.Errorf("décoder l'alerte Wazuh: %w", err)
+	}
+	agent := nestedMap(payload, "agent")
+	groups := make([]string, 0)
+	switch value := agent["groups"].(type) {
+	case []any:
+		for _, group := range value {
+			if name, ok := group.(string); ok && strings.TrimSpace(name) != "" {
+				groups = append(groups, name)
+			}
+		}
+	case string:
+		if strings.TrimSpace(value) != "" {
+			groups = append(groups, value)
+		}
+	}
+	return firstString(agent["name"]), firstString(agent["ip"]), groups, nil
 }
 
 func parseStoredTime(raw string) time.Time {

@@ -50,6 +50,12 @@ input, select { border: 1px solid #d0d5dd; border-radius: 7px; color: #172033; m
 .secondary:hover { background: #dbe8ff; }
 .filters { flex-wrap: wrap; margin: 0 0 18px; }
 .filters label { min-width: 155px; }
+.column-picker { position: relative; }
+.column-picker summary { border-radius: 7px; cursor: pointer; font-weight: 650; list-style: none; padding: 10px 15px; }
+.column-picker summary::-webkit-details-marker { display: none; }
+#incident-columns { background: #fff; border: 1px solid #d0d5dd; border-radius: 8px; box-shadow: 0 8px 20px #1018281a; display: grid; gap: 9px; margin: 8px 0 0; min-width: 220px; padding: 12px; position: absolute; right: 0; z-index: 1; }
+#incident-columns label { align-items: center; display: flex; font-size: .82rem; font-weight: 500; gap: 8px; white-space: nowrap; }
+#incident-columns input { min-height: 0; }
 .section-heading { margin-bottom: 15px; }
 .section-heading .eyebrow { margin-bottom: 3px; }
 .table-wrap { overflow-x: auto; }

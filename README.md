@@ -29,7 +29,8 @@ Ce projet est distribué sous licence GPL-3.0 ; voir [LICENSE](./LICENSE).
 - Publication IRIS désactivée par défaut ; elle n'envoie que les analyses
   automatiques qualifiées, jamais les alertes brutes.
 - Tableau de bord web léger intégré, sans dépendance JavaScript externe :
-  filtrage des incidents, pause/reprise des analyses et mise en file forcée.
+  filtrage des incidents, choix et mémorisation des colonnes affichées,
+  pause/reprise des analyses et mise en file forcée.
 
 ## Prérequis et lancement
 

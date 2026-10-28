@@ -19,7 +19,48 @@ const queueLabels = {
   done: "Terminé",
   failed: "Échec",
 };
+const incidentColumns = [
+  { key: "incident", label: "Incident", default: true },
+  { key: "severity", label: "Sévérité", default: true },
+  { key: "status", label: "Statut", default: true },
+  { key: "level", label: "Niveau Wazuh", default: true },
+  { key: "occurrences", label: "Occurrences", default: true },
+  { key: "agentGroups", label: "Groupe(s) de l’agent" },
+  { key: "agentName", label: "Nom de l’agent" },
+  { key: "agentIP", label: "IP de l’agent" },
+  { key: "sourceIP", label: "IP source" },
+  { key: "agentID", label: "ID de l’agent" },
+  { key: "ai", label: "IA", default: true },
+];
+const columnsKey = "soc-dashboard-incident-columns";
+const columnPicker = document.querySelector("#incident-columns");
+let visibleIncidentColumns = loadIncidentColumns();
+let latestIncidents = [];
+let latestAIEnabled = false;
 let refreshTimer;
+
+function loadIncidentColumns() {
+  const defaults = incidentColumns.filter((column) => column.default).map((column) => column.key);
+  const stored = localStorage.getItem(columnsKey);
+  if (!stored) return defaults;
+  try {
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return defaults;
+    return parsed.filter((key) => incidentColumns.some((column) => column.key === key));
+  } catch {
+    return defaults;
+  }
+}
+
+for (const checkbox of columnPicker.querySelectorAll("input")) {
+  checkbox.checked = visibleIncidentColumns.includes(checkbox.value);
+  checkbox.addEventListener("change", () => {
+    visibleIncidentColumns = Array.from(columnPicker.querySelectorAll("input:checked"))
+      .map((input) => input.value);
+    localStorage.setItem(columnsKey, JSON.stringify(visibleIncidentColumns));
+    renderIncidents(latestIncidents, latestAIEnabled);
+  });
+}
 
 function api(path, options = {}) {
   return fetch(path, {
@@ -73,7 +114,16 @@ function badge(row, label, style) {
 }
 
 function renderIncidents(incidents, enabled) {
+  const head = document.querySelector("#incidents-head");
   const body = document.querySelector("#incidents-body");
+  const headerRow = document.createElement("tr");
+  const columns = incidentColumns.filter((column) => visibleIncidentColumns.includes(column.key));
+  for (const column of columns) {
+    const heading = document.createElement("th");
+    heading.textContent = column.label;
+    headerRow.append(heading);
+  }
+  head.replaceChildren(headerRow);
   body.replaceChildren();
   const minLevel = Number(document.querySelector("#level-filter").value || 0);
   const severity = document.querySelector("#severity-filter").value;
@@ -84,23 +134,58 @@ function renderIncidents(incidents, enabled) {
 
   for (const incident of filtered) {
     const row = document.createElement("tr");
-    const title = cell(row, incident.title);
-    title.title = `ID : ${incident.id}`;
-    badge(row, `${incident.severity} · ${incident.score}`, incident.severity);
-    cell(row, statusLabels[incident.status] || incident.status);
-    cell(row, `${incident.rule_level}/15`);
-    cell(row, String(incident.occurrences));
-    const action = document.createElement("td");
-    const button = document.createElement("button");
-    button.className = "row-action";
-    button.type = "button";
-    button.textContent = enabled ? "Forcer l’analyse" : "Mettre en file";
-    button.title = enabled
-      ? "Forcer une nouvelle analyse IA pour cet incident"
-      : "Ajouter cet incident à la file ; il sera analysé à la reprise";
-    button.addEventListener("click", () => queueAnalysis(button, incident.id));
-    action.append(button);
-    row.append(action);
+    for (const column of columns) {
+      switch (column.key) {
+        case "incident": {
+          const title = cell(row, incident.title);
+          title.title = `ID : ${incident.id}`;
+          break;
+        }
+        case "severity":
+          badge(row, `${incident.severity} · ${incident.score}`, incident.severity);
+          break;
+        case "status":
+          cell(row, statusLabels[incident.status] || incident.status);
+          break;
+        case "level":
+          cell(row, `${incident.rule_level}/15`);
+          break;
+        case "occurrences":
+          cell(row, String(incident.occurrences));
+          break;
+        case "agentGroups":
+          cell(row, (incident.agent_groups || []).join(", ") || "—");
+          break;
+        case "agentName":
+          cell(row, incident.agent_name || "—");
+          break;
+        case "agentIP":
+          cell(row, incident.agent_ip || "—");
+          break;
+        case "sourceIP":
+          cell(row, incident.source_ip || "—");
+          break;
+        case "agentID": {
+          const agentID = cell(row, incident.agent_id || "—");
+          if (incident.agent_id) agentID.title = incident.agent_id;
+          break;
+        }
+        case "ai": {
+          const action = document.createElement("td");
+          const button = document.createElement("button");
+          button.className = "row-action";
+          button.type = "button";
+          button.textContent = enabled ? "Forcer l’analyse" : "Mettre en file";
+          button.title = enabled
+            ? "Forcer une nouvelle analyse IA pour cet incident"
+            : "Ajouter cet incident à la file ; il sera analysé à la reprise";
+          button.addEventListener("click", () => queueAnalysis(button, incident.id));
+          action.append(button);
+          row.append(action);
+          break;
+        }
+      }
+    }
     body.append(row);
   }
 }
@@ -138,6 +223,8 @@ async function refreshDashboard() {
     const toggle = document.querySelector("#toggle-ai");
     toggle.textContent = control.enabled ? "Mettre en pause" : "Reprendre l’analyse";
     toggle.disabled = false;
+    latestIncidents = incidents;
+    latestAIEnabled = control.enabled;
     renderIncidents(incidents, control.enabled);
     renderQueue(control.queue);
     setConnected(true);
