@@ -1,0 +1,78 @@
+{
+  "_index": "wazuh-alerts-4.x-2026.10.28",
+  "_id": "B_-fgaEB8SqUUfZ-lf1L",
+  "_version": 1,
+  "_score": null,
+  "_source": {
+    "input": {
+      "type": "log"
+    },
+    "agent": {
+      "ip": "192.168.5.210",
+      "name": "AgentTest3",
+      "id": "003",
+      "labels": {
+        "group": "ClientB"
+      }
+    },
+    "manager": {
+      "name": "Wazuh-debian"
+    },
+    "data": {
+      "win": {
+        "eventdata": {
+          "data": "SearchIndexer, 756,D,23, Windows:, 0, 128, 0x000001E6D60310C0:0x472fd4, 0x00000000, 0x0000000000001A1C, 1, 45861@09:27:38  57573@09:27:35"
+        },
+        "system": {
+          "eventID": "623",
+          "keywords": "0x80000000000000",
+          "level": "2",
+          "channel": "Application",
+          "opcode": "0",
+          "message": "\"SearchIndexer (756,D,23) Windows: La banque des versions de cette instance (0) a atteint sa taille maximale de 128 Mo. Il est probable qu’une transaction longue empêche le nettoyage de cette banque des versions qui devient trop volumineuse. Les mises à jour seront rejetées tant que la transaction longue n’aura pas été entièrement validée ou annulée. \r\nTransaction longue possible : \r\n\tID de session : 0x000001E6D60310C0:0x472fd4 \r\n\tContexte de session : 0x00000000 \r\n\tID de thread de contexte de session : 0x0000000000001A1C \r\n\tNettoyage : 1 \r\n\tTrace de session : \r\n45861@09:27:38\r\n57573@09:27:35\r\n\"",
+          "version": "0",
+          "systemTime": "2026-10-28T08:27:38.4048655Z",
+          "eventRecordID": "511504",
+          "threadID": "0",
+          "computer": "SiteMonCompte",
+          "task": "14",
+          "processID": "0",
+          "severityValue": "ERROR",
+          "providerName": "ESENT"
+        }
+      }
+    },
+    "rule": {
+      "firedtimes": 2,
+      "mail": false,
+      "level": 9,
+      "description": "Windows application error event.",
+      "groups": [
+        "windows",
+        "windows_application",
+        "system_error"
+      ],
+      "id": "60602",
+      "gdpr": [
+        "IV_35.7.d"
+      ],
+      "gpg13": [
+        "4.3"
+      ]
+    },
+    "location": "EventChannel",
+    "decoder": {
+      "name": "windows_eventchannel"
+    },
+    "id": "1793176079.4096998",
+    "timestamp": "2026-10-28T09:27:59.280+0100"
+  },
+  "fields": {
+    "timestamp": [
+      "2026-10-28T08:27:59.280Z"
+    ]
+  },
+  "sort": [
+    1793176079280
+  ]
+}

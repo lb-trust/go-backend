@@ -114,8 +114,10 @@ func TestIncidentsExposeWazuhAgentMetadata(t *testing.T) {
 	payload := alertPayload("agent-details-event", highAlertLevel, "agent-42", "203.0.113.42")
 	agent := payload["agent"].(map[string]any)
 	agent["ip"] = "192.0.2.42"
-	agent["groups"] = []any{"linux", "production"}
-	if _, _, err := backend.IngestAlert(ctx, "tenant-a", payload); err != nil {
+	agent["labels"] = map[string]any{"group": "ClientB"}
+	delete(payload["data"].(map[string]any), "srcip")
+	wrappedPayload := map[string]any{"_id": "agent-details-event", "_source": payload}
+	if _, _, err := backend.IngestAlert(ctx, "tenant-a", wrappedPayload); err != nil {
 		t.Fatal(err)
 	}
 
@@ -126,9 +128,8 @@ func TestIncidentsExposeWazuhAgentMetadata(t *testing.T) {
 	assertAgentMetadata := func(t *testing.T, incident Incident) {
 		t.Helper()
 		if incident.AgentLabel != "serveur-test" || incident.AgentIP != "192.0.2.42" ||
-			incident.AgentID != "agent-42" || incident.SourceIP != "203.0.113.42" ||
-			len(incident.AgentGroups) != 2 || incident.AgentGroups[0] != "linux" ||
-			incident.AgentGroups[1] != "production" {
+			incident.AgentID != "agent-42" || incident.SourceIP != "" ||
+			len(incident.AgentGroups) != 1 || incident.AgentGroups[0] != "ClientB" {
 			t.Fatalf("agent metadata = %#v", incident)
 		}
 	}
@@ -140,7 +141,7 @@ func TestIncidentsExposeWazuhAgentMetadata(t *testing.T) {
 	}
 	assertAgentMetadata(t, incident)
 	if len(incident.Alerts) != 1 || incident.Alerts[0].AgentIP != "192.0.2.42" ||
-		len(incident.Alerts[0].AgentGroups) != 2 {
+		len(incident.Alerts[0].AgentGroups) != 1 || incident.Alerts[0].AgentGroups[0] != "ClientB" {
 		t.Fatalf("alert agent metadata = %#v", incident.Alerts)
 	}
 }

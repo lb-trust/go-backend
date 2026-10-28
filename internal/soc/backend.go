@@ -266,10 +266,14 @@ func normalizeAlert(raw map[string]any) (normalizedAlert, error) {
 			err: errors.New("le corps de l'alerte doit être un objet JSON"),
 		}
 	}
-	rule := nestedMap(raw, "rule")
-	agent := nestedMap(raw, "agent")
-	data := nestedMap(raw, "data")
-	timestamp := firstString(raw["timestamp"], raw["@timestamp"])
+	alert := raw
+	if source, ok := raw["_source"].(map[string]any); ok {
+		alert = source
+	}
+	rule := nestedMap(alert, "rule")
+	agent := nestedMap(alert, "agent")
+	data := nestedMap(alert, "data")
+	timestamp := firstString(alert["timestamp"], alert["@timestamp"])
 	occurredAt := time.Now().UTC()
 	if timestamp != "" {
 		parsed, err := parseAlertTimestamp(timestamp)
@@ -280,11 +284,11 @@ func normalizeAlert(raw map[string]any) (normalizedAlert, error) {
 		}
 		occurredAt = parsed.UTC()
 	}
-	rawJSON, err := json.Marshal(raw)
+	rawJSON, err := json.Marshal(alert)
 	if err != nil {
 		return normalizedAlert{}, fmt.Errorf("encoder l'alerte: %w", err)
 	}
-	level := intValue(firstValue(rule["level"], raw["level"]))
+	level := intValue(firstValue(rule["level"], alert["level"]))
 	if level < 0 {
 		level = 0
 	}
@@ -292,16 +296,16 @@ func normalizeAlert(raw map[string]any) (normalizedAlert, error) {
 		level = 15
 	}
 	return normalizedAlert{
-		WazuhID:     firstString(raw["id"], raw["_id"]),
+		WazuhID:     firstString(alert["id"], raw["_id"], raw["id"]),
 		Timestamp:   occurredAt,
-		RuleID:      firstString(rule["id"], raw["rule_id"], "unknown"),
+		RuleID:      firstString(rule["id"], alert["rule_id"], "unknown"),
 		RuleLevel:   level,
-		Description: firstString(rule["description"], raw["description"], "Aucune description"),
-		AgentID:     firstString(agent["id"], raw["agent_id"]),
-		AgentName:   firstString(agent["name"], raw["agent_name"], "inconnu"),
-		SourceIP:    firstString(data["srcip"], data["src_ip"], raw["srcip"]),
-		DestIP:      firstString(data["dstip"], data["dst_ip"], raw["dstip"]),
-		Location:    firstString(raw["location"]),
+		Description: firstString(rule["description"], alert["description"], "Aucune description"),
+		AgentID:     firstString(agent["id"], alert["agent_id"]),
+		AgentName:   firstString(agent["name"], alert["agent_name"], "inconnu"),
+		SourceIP:    firstString(data["srcip"], data["src_ip"], alert["srcip"]),
+		DestIP:      firstString(data["dstip"], data["dst_ip"], alert["dstip"]),
+		Location:    firstString(alert["location"]),
 		RawJSON:     string(rawJSON),
 	}, nil
 }
@@ -880,9 +884,14 @@ func agentMetadata(raw json.RawMessage) (string, string, []string, error) {
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return "", "", nil, fmt.Errorf("décoder l'alerte Wazuh: %w", err)
 	}
+	if source, ok := payload["_source"].(map[string]any); ok {
+		payload = source
+	}
 	agent := nestedMap(payload, "agent")
 	groups := make([]string, 0)
-	switch value := agent["groups"].(type) {
+	labels := nestedMap(agent, "labels")
+	groupValue := firstValue(labels["group"], agent["groups"])
+	switch value := groupValue.(type) {
 	case []any:
 		for _, group := range value {
 			if name, ok := group.(string); ok && strings.TrimSpace(name) != "" {
