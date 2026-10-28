@@ -11,7 +11,7 @@
   <main class="shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">GO SOC BACKEND</p>
+        <p class="eyebrow">TRUSTINFO SOC</p>
         <h1>Console de supervision</h1>
       </div>
       <span class="connection" id="connection-state">Déconnecté</span>
@@ -50,7 +50,12 @@
           </select>
         </label>
         <label>
-          Sévérité
+          <span class="filter-label">Sévérité
+            <details class="help-tip">
+              <summary aria-label="À propos de la sévérité">i</summary>
+              <span class="help-content" role="note">La sévérité est calculée par le backend à partir du score de risque de l’incident.</span>
+            </details>
+          </span>
           <select id="severity-filter">
             <option value="">Toutes</option>
             <option value="critical">Critique</option>
@@ -60,7 +65,12 @@
           </select>
         </label>
         <label>
-          Niveau Wazuh minimum
+          <span class="filter-label">Niveau Wazuh minimum
+            <details class="help-tip">
+              <summary aria-label="À propos du niveau Wazuh">i</summary>
+              <span class="help-content" role="note">Le niveau Wazuh va de 0 à 15. Ce filtre conserve les incidents dont le niveau est égal ou supérieur à la valeur choisie.</span>
+            </details>
+          </span>
           <input id="level-filter" type="number" min="0" max="15" value="0">
         </label>
         <button id="refresh" type="button" class="secondary">Actualiser</button>
@@ -86,7 +96,12 @@
         <div class="section-heading">
           <div>
             <p class="eyebrow">ALERTES CORRÉLÉES</p>
-            <h2>Incidents</h2>
+            <h2>Incidents
+              <details class="help-tip">
+                <summary aria-label="À propos des occurrences et des durées">i</summary>
+                <span class="help-content" role="note">Les occurrences indiquent le nombre d’alertes reliées à l’incident, après regroupement. Les alertes de niveau inférieur à 10 sont regroupées sur 6 h ; à partir du niveau 10, sur 30 min. Les incidents ouverts ou en cours peuvent être corrélés pendant 30 min après leur dernière mise à jour.</span>
+              </details>
+            </h2>
           </div>
           <span class="muted" id="incident-count"></span>
         </div>
@@ -106,7 +121,12 @@
             <p class="eyebrow">TRAITEMENTS IA</p>
             <h2>File d’analyse</h2>
           </div>
-          <span class="muted">100 derniers traitements</span>
+          <span class="muted queue-caption">100 derniers traitements
+            <details class="help-tip">
+              <summary aria-label="À propos de la file d’analyse">i</summary>
+              <span class="help-content" role="note">La liste présente les 100 traitements les plus récents. Le dashboard se met à jour automatiquement toutes les 10 secondes ; « Actualiser » lance une mise à jour immédiate.</span>
+            </details>
+          </span>
         </div>
         <div class="table-wrap">
           <table>
