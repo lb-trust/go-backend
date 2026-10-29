@@ -51,30 +51,36 @@
             <fieldset id="client-options" aria-label="Groupes client à afficher"></fieldset>
           </details>
         </div>
-        <label>
-          Statut
-          <select id="status-filter">
-            <option value="">Tous</option>
-            <option value="open">Ouvert</option>
-            <option value="investigating">En cours</option>
-            <option value="resolved">Résolu</option>
-            <option value="false_positive">Faux positif</option>
-          </select>
+        <label class="filter-control">
+          <span>Statut</span>
+          <details id="status-filter" class="filter-menu">
+            <summary class="filter-picker">Tous</summary>
+            <fieldset class="filter-options" aria-label="Filtrer par statut">
+              <label><input type="radio" name="status-filter" value="" checked> Tous</label>
+              <label><input type="radio" name="status-filter" value="open"> Ouvert</label>
+              <label><input type="radio" name="status-filter" value="investigating"> En cours</label>
+              <label><input type="radio" name="status-filter" value="resolved"> Résolu</label>
+              <label><input type="radio" name="status-filter" value="false_positive"> Faux positif</label>
+            </fieldset>
+          </details>
         </label>
-        <label>
+        <label class="filter-control">
           <span class="filter-label">Sévérité
             <details class="help-tip">
               <summary aria-label="À propos de la sévérité">i</summary>
               <span class="help-content" role="note">La sévérité est calculée par le backend à partir du score de risque de l’incident.</span>
             </details>
           </span>
-          <select id="severity-filter">
-            <option value="">Toutes</option>
-            <option value="critical">Critique</option>
-            <option value="high">Haute</option>
-            <option value="medium">Moyenne</option>
-            <option value="low">Faible</option>
-          </select>
+          <details id="severity-filter" class="filter-menu">
+            <summary class="filter-picker">Toutes</summary>
+            <fieldset class="filter-options" aria-label="Filtrer par sévérité">
+              <label><input type="radio" name="severity-filter" value="" checked> Toutes</label>
+              <label><input type="radio" name="severity-filter" value="critical"> Critique</label>
+              <label><input type="radio" name="severity-filter" value="high"> Haute</label>
+              <label><input type="radio" name="severity-filter" value="medium"> Moyenne</label>
+              <label><input type="radio" name="severity-filter" value="low"> Faible</label>
+            </fieldset>
+          </details>
         </label>
         <label>
           <span class="filter-label">Niveau Wazuh minimum

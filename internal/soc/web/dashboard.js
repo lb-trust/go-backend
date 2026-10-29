@@ -164,6 +164,21 @@ function updateClientFilterSummary() {
       : `${selected.length} groupe(s) sélectionné(s)`;
 }
 
+function selectedFilterValue(filterID) {
+  return document.querySelector(`#${filterID} input:checked`).value;
+}
+
+for (const filterID of ["status-filter", "severity-filter"]) {
+  const filter = document.querySelector(`#${filterID}`);
+  filter.querySelectorAll("input").forEach((input) => {
+    input.addEventListener("change", () => {
+      filter.querySelector("summary").textContent = input.parentElement.textContent.trim();
+      filter.open = false;
+      refreshDashboard();
+    });
+  });
+}
+
 function initializeClientFilter(groups) {
   configuredGroups = groups;
   const allLabel = document.createElement("label");
@@ -228,7 +243,7 @@ function renderIncidents(incidents, enabled) {
   head.replaceChildren(headerRow);
   body.replaceChildren();
   const minLevel = Number(document.querySelector("#level-filter").value || 0);
-  const severity = document.querySelector("#severity-filter").value;
+  const severity = selectedFilterValue("severity-filter");
   const selected = selectedClients();
   const filtered = incidents.filter((incident) =>
     incident.rule_level >= minLevel &&
@@ -419,7 +434,7 @@ async function refreshDashboard() {
     if (configuredGroups === null) {
       initializeClientFilter(await api("/api/clients"));
     }
-    const status = document.querySelector("#status-filter").value;
+    const status = selectedFilterValue("status-filter");
     const query = new URLSearchParams({ limit: "500" });
     if (status) query.set("status", status);
     const [incidents, control, wazuhStatus] = await Promise.all([
@@ -512,8 +527,6 @@ document.querySelector("#toggle-ai").addEventListener("click", async (event) => 
 });
 
 document.querySelector("#refresh").addEventListener("click", refreshDashboard);
-document.querySelector("#status-filter").addEventListener("change", refreshDashboard);
-document.querySelector("#severity-filter").addEventListener("change", refreshDashboard);
 document.querySelector("#level-filter").addEventListener("input", refreshDashboard);
 document.querySelector("#logout").addEventListener("click", disconnect);
 const incidentDialog = document.querySelector("#incident-dialog");
