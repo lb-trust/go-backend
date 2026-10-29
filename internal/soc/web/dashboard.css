@@ -66,14 +66,15 @@ input, select { border: 1px solid #d0d5dd; border-radius: 7px; color: #172033; m
 .filter-label { align-items: center; display: flex; gap: 6px; }
 .client-picker { display: grid; gap: 6px; min-width: 180px; }
 #client-filter { position: relative; }
-#client-filter summary { border-radius: 7px; cursor: pointer; font-weight: 650; list-style: none; padding: 10px 15px; }
-#client-filter summary::-webkit-details-marker { display: none; }
+.filter-picker { align-items: center; background: #fff; border: 1px solid #d0d5dd; border-radius: 7px; color: #172033; cursor: pointer; display: flex; font-size: .85rem; font-weight: 650; justify-content: space-between; list-style: none; min-height: 40px; padding: 8px 10px; }
+.filter-picker::after { border-bottom: 1.5px solid #667085; border-right: 1.5px solid #667085; content: ""; height: 7px; margin-left: 12px; transform: rotate(45deg) translateY(-2px); width: 7px; }
+.filter-picker::-webkit-details-marker { display: none; }
+.filter-picker:hover { border-color: #98a2b3; }
+.filter-picker:focus-visible { outline: 3px solid #155eef; outline-offset: 2px; }
 #client-options { background: #fff; border: 1px solid #d0d5dd; border-radius: 8px; box-shadow: 0 8px 20px #1018281a; display: grid; gap: 9px; margin: 8px 0 0; min-width: 220px; padding: 12px; position: absolute; z-index: 2; }
 #client-options label { align-items: center; display: flex; font-size: .82rem; font-weight: 500; gap: 8px; white-space: nowrap; }
 #client-options input { min-height: 0; }
-.column-picker { position: relative; }
-.column-picker summary { border-radius: 7px; cursor: pointer; font-weight: 650; list-style: none; padding: 10px 15px; }
-.column-picker summary::-webkit-details-marker { display: none; }
+.column-picker { min-width: 155px; position: relative; }
 #incident-columns { background: #fff; border: 1px solid #d0d5dd; border-radius: 8px; box-shadow: 0 8px 20px #1018281a; display: grid; gap: 9px; margin: 8px 0 0; min-width: 220px; padding: 12px; position: absolute; right: 0; z-index: 1; }
 #incident-columns label { align-items: center; display: flex; font-size: .82rem; font-weight: 500; gap: 8px; white-space: nowrap; }
 #incident-columns input { min-height: 0; }
@@ -109,6 +110,7 @@ tr:last-child td { border-bottom: 0; }
 #incident-dialog::backdrop { background: #10182880; }
 .incident-dialog-header { align-items: flex-start; display: flex; justify-content: space-between; gap: 16px; }
 .incident-dialog-header h2 { overflow-wrap: anywhere; }
+.icon-button { align-items: center; display: inline-flex; flex: 0 0 36px; font-size: 1.35rem; height: 36px; justify-content: center; line-height: 1; padding: 4px; }
 .incident-detail-grid { display: grid; gap: 14px 20px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 20px 0; }
 .incident-detail-grid > div { display: grid; gap: 4px; min-width: 0; }
 .detail-label { color: #667085; font-size: .76rem; font-weight: 650; }

@@ -513,8 +513,15 @@ document.querySelector("#status-filter").addEventListener("change", refreshDashb
 document.querySelector("#severity-filter").addEventListener("change", refreshDashboard);
 document.querySelector("#level-filter").addEventListener("input", refreshDashboard);
 document.querySelector("#logout").addEventListener("click", disconnect);
+const incidentDialog = document.querySelector("#incident-dialog");
 document.querySelector("#close-incident").addEventListener("click", () => {
-  document.querySelector("#incident-dialog").close();
+  incidentDialog.close();
+});
+incidentDialog.addEventListener("click", (event) => {
+  if (event.target === incidentDialog) incidentDialog.close();
+});
+incidentDialog.addEventListener("close", () => {
+  if (!incidentDialog.open) activeIncidentID = "";
 });
 document.querySelector("#incident-edit-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -532,6 +539,7 @@ document.querySelector("#incident-edit-form").addEventListener("submit", async (
     });
     document.querySelector("#incident-feedback").value = "";
     setIncidentDetail(incident);
+    incidentDialog.close();
     await refreshDashboard();
   } catch (error) {
     document.querySelector("#incident-dialog-error").textContent = error.message;

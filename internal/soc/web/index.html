@@ -47,7 +47,7 @@
         <div class="client-picker">
           <span class="filter-label">Groupes client</span>
           <details id="client-filter">
-            <summary class="secondary">Chargement des groupes…</summary>
+            <summary class="filter-picker">Chargement des groupes…</summary>
             <fieldset id="client-options" aria-label="Groupes client à afficher"></fieldset>
           </details>
         </div>
@@ -87,7 +87,7 @@
         </label>
         <button id="refresh" type="button" class="secondary">Actualiser</button>
         <details class="column-picker">
-          <summary class="secondary">Colonnes</summary>
+          <summary class="filter-picker">Colonnes</summary>
           <fieldset id="incident-columns" aria-label="Colonnes des incidents">
             <label><input type="checkbox" value="incident"> Incident</label>
             <label><input type="checkbox" value="severity"> Sévérité</label>
@@ -133,7 +133,9 @@
             <p class="eyebrow">DÉTAIL DE L’INCIDENT</p>
             <h2 id="incident-dialog-title">Incident</h2>
           </div>
-          <button id="close-incident" type="button" class="secondary" aria-label="Fermer le détail">Fermer</button>
+          <button id="close-incident" type="button" class="secondary icon-button" aria-label="Fermer le détail" title="Fermer">
+            <span aria-hidden="true">&times;</span>
+          </button>
         </div>
         <p id="incident-dialog-error" class="message" role="status"></p>
         <div class="incident-detail-grid">
