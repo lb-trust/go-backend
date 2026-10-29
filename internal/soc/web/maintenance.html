@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Maintenance Wazuh — Console SOC</title>
+  <link rel="stylesheet" href="/assets/dashboard.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">TRUSTINFO SOC</p>
+        <h1>État de la collecte Wazuh</h1>
+      </div>
+      <div class="maintenance-actions">
+        <button id="refresh-wazuh" type="button" class="secondary">Actualiser</button>
+        <a class="secondary maintenance-back" href="/">Retour au dashboard</a>
+      </div>
+    </header>
+
+    <section class="panel">
+      <h2 id="wazuh-overall-state">Vérification…</h2>
+      <p class="muted" id="wazuh-explanation" role="status" aria-live="polite">
+        Chargement du statut de la collecte.
+      </p>
+      <p class="message" id="wazuh-error" role="status"></p>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">SOURCES CONFIGURÉES</p>
+          <h2>Détails des contrôles</h2>
+        </div>
+        <span class="muted">Mise à jour automatique toutes les 10 secondes</span>
+      </div>
+      <div class="table-wrap">
+        <table class="maintenance-table">
+          <thead>
+            <tr>
+              <th>Client</th>
+              <th>État</th>
+              <th>Dernier contrôle</th>
+              <th>Dernier succès</th>
+              <th>Alertes au dernier contrôle</th>
+              <th>Dernière alerte Wazuh</th>
+              <th>Erreur</th>
+            </tr>
+          </thead>
+          <tbody id="wazuh-sources"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="empty-wazuh-sources" hidden>Aucune source Wazuh configurée pour ce jeton.</p>
+    </section>
+  </main>
+  <script src="/assets/maintenance.js" defer></script>
+</body>
+</html>

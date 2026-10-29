@@ -35,10 +35,18 @@ h2 { font-size: 1.15rem; margin-bottom: 5px; }
 .connection, .badge { border-radius: 999px; background: #e4e7ec; color: #344054; font-size: .8rem; font-weight: 700; padding: 6px 11px; }
 .connection.online { background: #dcfae6; color: #067647; }
 .header-status { align-items: flex-end; display: flex; flex-direction: column; gap: 7px; }
-.wazuh-status { background: #e4e7ec; border-radius: 999px; color: #344054; font-size: .75rem; font-weight: 700; max-width: min(520px, 70vw); overflow: hidden; padding: 6px 11px; text-overflow: ellipsis; white-space: nowrap; }
+.wazuh-status { background: #e4e7ec; border-radius: 999px; color: #344054; display: inline-block; font-size: .75rem; font-weight: 700; max-width: min(520px, 70vw); overflow: hidden; padding: 6px 11px; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.wazuh-status:hover { filter: brightness(.96); }
+.wazuh-status:focus-visible { outline: 3px solid #155eef; outline-offset: 2px; }
 .wazuh-status.online { background: #dcfae6; color: #067647; }
 .wazuh-status.idle, .wazuh-status.unavailable { background: #fef0c7; color: #93370d; }
 .wazuh-status.error { background: #fee4e2; color: #b42318; }
+.maintenance-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
+.maintenance-back { border-radius: 7px; font-size: .9rem; font-weight: 650; padding: 10px 15px; text-decoration: none; }
+.maintenance-table { min-width: 950px; }
+.maintenance-state.receiving { color: #067647; font-weight: 700; }
+.maintenance-state.idle, .maintenance-state.unknown { color: #93370d; font-weight: 700; }
+.maintenance-state.error { color: #b42318; font-weight: 700; }
 .panel { background: #fff; border: 1px solid #e4e7ec; border-radius: 10px; margin-bottom: 18px; padding: 20px; }
 .login-panel { max-width: 480px; }
 .login-panel > p { color: #667085; }

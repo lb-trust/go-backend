@@ -463,6 +463,15 @@ func TestAPIRequiresTenantTokenAndReturnsTenantData(t *testing.T) {
 			pageResponse.StatusCode, pageResponse.Header.Get("Content-Security-Policy"), pageResponse.Header.Get("Location"))
 	}
 	pageResponse.Body.Close()
+	maintenanceResponse, err := client.Get(server.URL + "/maintenance")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if maintenanceResponse.StatusCode != http.StatusOK {
+		maintenanceResponse.Body.Close()
+		t.Fatalf("maintenance page status = %d, want %d", maintenanceResponse.StatusCode, http.StatusOK)
+	}
+	maintenanceResponse.Body.Close()
 	assetResponse, err := client.Get(server.URL + "/assets/dashboard.js")
 	if err != nil {
 		t.Fatal(err)
@@ -472,6 +481,15 @@ func TestAPIRequiresTenantTokenAndReturnsTenantData(t *testing.T) {
 		t.Fatalf("dashboard JavaScript status = %d, want %d", assetResponse.StatusCode, http.StatusOK)
 	}
 	assetResponse.Body.Close()
+	maintenanceAssetResponse, err := client.Get(server.URL + "/assets/maintenance.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if maintenanceAssetResponse.StatusCode != http.StatusOK {
+		maintenanceAssetResponse.Body.Close()
+		t.Fatalf("maintenance JavaScript status = %d, want %d", maintenanceAssetResponse.StatusCode, http.StatusOK)
+	}
+	maintenanceAssetResponse.Body.Close()
 
 	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/alerts", jsonBody(alertPayload("evt", 5, "agent", "")))
 	if err != nil {

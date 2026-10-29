@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-//go:embed web/index.html web/dashboard.css web/dashboard.js
+//go:embed web/index.html web/dashboard.css web/dashboard.js web/maintenance.html web/maintenance.js
 var dashboardFiles embed.FS
 
 func dashboardHandler() http.Handler {
@@ -29,6 +29,19 @@ func dashboardHandler() http.Handler {
 			w.WriteHeader(http.StatusOK)
 			if _, err := w.Write(index); err != nil {
 				log.Printf("envoyer le tableau de bord: %v", err)
+			}
+			return
+		} else if r.URL.Path == "/maintenance" {
+			page, err := dashboardFiles.ReadFile("web/maintenance.html")
+			if err != nil {
+				log.Printf("lire la page de maintenance embarquée: %v", err)
+				http.Error(w, "erreur interne", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			if _, err := w.Write(page); err != nil {
+				log.Printf("envoyer la page de maintenance: %v", err)
 			}
 			return
 		} else if strings.HasPrefix(r.URL.Path, "/assets/") {

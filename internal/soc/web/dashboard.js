@@ -107,7 +107,7 @@ function renderWazuhStatus(status) {
   if (!status.configured) {
     indicator.textContent = "Wazuh : non configuré";
     indicator.classList.add("unavailable");
-    indicator.title = "Aucune source Wazuh n’est configurée sur le serveur.";
+    indicator.title = "Cliquer pour consulter le diagnostic Wazuh.";
     return;
   }
   const lines = status.sources.map((source) => {
@@ -131,7 +131,7 @@ function renderWazuhStatus(status) {
       ? "Wazuh : alertes reçues"
       : "Wazuh : connecté";
   indicator.classList.add(hasError ? "error" : receiving ? "online" : "idle");
-  indicator.title = lines.join("\n");
+  indicator.title = `Cliquer pour consulter le diagnostic Wazuh.\n${lines.join("\n")}`;
 }
 
 function disconnect() {
