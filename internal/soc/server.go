@@ -22,6 +22,7 @@ func (b *Backend) Handler() http.Handler {
 	})
 	mux.Handle("GET /api/dashboard", b.authenticate(http.HandlerFunc(b.dashboardHandler)))
 	mux.Handle("GET /api/control/ai", b.authenticate(http.HandlerFunc(b.aiControlHandler)))
+	mux.Handle("GET /api/wazuh/status", b.authenticate(http.HandlerFunc(b.wazuhStatusHandler)))
 	mux.Handle("PATCH /api/control/ai", b.authenticate(http.HandlerFunc(b.setAIControlHandler)))
 	mux.Handle("POST /api/incidents/{id}/queue", b.authenticate(http.HandlerFunc(b.queueIncidentHandler)))
 	mux.Handle("DELETE /api/incidents/{id}/queue", b.authenticate(http.HandlerFunc(b.removeQueuedIncidentHandler)))
@@ -128,6 +129,15 @@ func (b *Backend) listClientsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, groups)
+}
+
+func (b *Backend) wazuhStatusHandler(w http.ResponseWriter, r *http.Request) {
+	tenantID := tenantFromContext(r.Context())
+	statuses := b.WazuhStatus(tenantID)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"configured": len(statuses) > 0,
+		"sources":    statuses,
+	})
 }
 
 func (b *Backend) authenticate(next http.Handler) http.Handler {

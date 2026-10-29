@@ -20,6 +20,53 @@ import (
 
 const maxAIJobAttempts = 3
 
+type WazuhSourceStatus struct {
+	TenantID       string     `json:"tenant_id"`
+	AlertsIndex    string     `json:"alerts_index"`
+	State          string     `json:"state"`
+	LastCheck      *time.Time `json:"last_check,omitempty"`
+	LastSuccess    *time.Time `json:"last_success,omitempty"`
+	LastAlert      *time.Time `json:"last_alert,omitempty"`
+	AlertsReceived int        `json:"alerts_received"`
+	Error          string     `json:"error,omitempty"`
+}
+
+func wazuhSourceStatusKey(source WazuhSource) string {
+	return source.TenantID + "\x00" + source.URL + "\x00" + source.AlertsIndex
+}
+
+func (b *Backend) WazuhStatus(tenantID string) []WazuhSourceStatus {
+	now := time.Now().UTC()
+	b.wazuhStatusMu.RLock()
+	defer b.wazuhStatusMu.RUnlock()
+	statuses := make([]WazuhSourceStatus, 0, len(b.config.WazuhSources))
+	for _, source := range b.config.WazuhSources {
+		if source.TenantID != tenantID {
+			continue
+		}
+		status, exists := b.wazuhStatuses[wazuhSourceStatusKey(source)]
+		if !exists {
+			status = WazuhSourceStatus{
+				TenantID:    source.TenantID,
+				AlertsIndex: source.AlertsIndex,
+				State:       "unknown",
+			}
+		} else if status.Error == "" {
+			state := "idle"
+			freshness := 2 * b.config.WazuhPollInterval
+			if freshness <= 0 {
+				freshness = 2 * time.Minute
+			}
+			if status.LastAlert != nil && now.Sub(*status.LastAlert) <= freshness {
+				state = "receiving"
+			}
+			status.State = state
+		}
+		statuses = append(statuses, status)
+	}
+	return statuses
+}
+
 func newHTTPClient() *http.Client {
 	return &http.Client{Timeout: 30 * time.Second}
 }
@@ -218,7 +265,32 @@ func (b *Backend) runCollector(ctx context.Context, source WazuhSource) {
 	}
 }
 
-func (b *Backend) pollWazuh(ctx context.Context, source WazuhSource) error {
+func (b *Backend) pollWazuh(ctx context.Context, source WazuhSource) (pollErr error) {
+	status := WazuhSourceStatus{
+		TenantID:    source.TenantID,
+		AlertsIndex: source.AlertsIndex,
+		State:       "idle",
+	}
+	checkedAt := time.Now().UTC()
+	status.LastCheck = &checkedAt
+	defer func() {
+		if pollErr != nil {
+			status.State = "error"
+			status.Error = pollErr.Error()
+		} else {
+			succeededAt := time.Now().UTC()
+			status.LastSuccess = &succeededAt
+			status.Error = ""
+		}
+		b.wazuhStatusMu.Lock()
+		previous := b.wazuhStatuses[wazuhSourceStatusKey(source)]
+		if status.LastAlert == nil {
+			status.LastAlert = previous.LastAlert
+		}
+		b.wazuhStatuses[wazuhSourceStatusKey(source)] = status
+		b.wazuhStatusMu.Unlock()
+	}()
+
 	base, err := url.Parse(strings.TrimRight(source.URL, "/"))
 	if err != nil {
 		return fmt.Errorf("analyser l'URL de l'Indexer: %w", err)
@@ -268,9 +340,16 @@ func (b *Backend) pollWazuh(ctx context.Context, source WazuhSource) error {
 	if err := json.NewDecoder(io.LimitReader(response.Body, maxRequestBytes*10)).Decode(&result); err != nil {
 		return fmt.Errorf("décoder les alertes Wazuh: %w", err)
 	}
+	status.AlertsReceived = len(result.Hits.Hits)
 	for _, hit := range result.Hits.Hits {
 		if hit.Source == nil {
 			return fmt.Errorf("Wazuh a renvoyé une alerte sans document source")
+		}
+		if rawTimestamp, ok := hit.Source["timestamp"].(string); ok {
+			if timestamp, err := parseAlertTimestamp(rawTimestamp); err == nil &&
+				(status.LastAlert == nil || timestamp.After(*status.LastAlert)) {
+				status.LastAlert = &timestamp
+			}
 		}
 		hit.Source["_id"] = hit.ID
 		if _, _, err := b.IngestAlert(ctx, source.TenantID, hit.Source); err != nil {

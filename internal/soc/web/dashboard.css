@@ -34,6 +34,11 @@ h1 { font-size: clamp(1.5rem, 3vw, 2rem); margin-bottom: 0; }
 h2 { font-size: 1.15rem; margin-bottom: 5px; }
 .connection, .badge { border-radius: 999px; background: #e4e7ec; color: #344054; font-size: .8rem; font-weight: 700; padding: 6px 11px; }
 .connection.online { background: #dcfae6; color: #067647; }
+.header-status { align-items: flex-end; display: flex; flex-direction: column; gap: 7px; }
+.wazuh-status { background: #e4e7ec; border-radius: 999px; color: #344054; font-size: .75rem; font-weight: 700; max-width: min(520px, 70vw); overflow: hidden; padding: 6px 11px; text-overflow: ellipsis; white-space: nowrap; }
+.wazuh-status.online { background: #dcfae6; color: #067647; }
+.wazuh-status.idle, .wazuh-status.unavailable { background: #fef0c7; color: #93370d; }
+.wazuh-status.error { background: #fee4e2; color: #b42318; }
 .panel { background: #fff; border: 1px solid #e4e7ec; border-radius: 10px; margin-bottom: 18px; padding: 20px; }
 .login-panel { max-width: 480px; }
 .login-panel > p { color: #667085; }
@@ -97,6 +102,7 @@ footer { display: flex; justify-content: flex-end; }
   .shell { padding: 20px 12px 32px; }
   .panel { padding: 15px; }
   .control-panel { align-items: flex-start; flex-direction: column; }
+  .header-status { align-items: flex-end; }
   .filters { align-items: stretch; flex-direction: column; }
   .filters label { min-width: 0; }
 }

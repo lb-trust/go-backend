@@ -14,7 +14,12 @@
         <p class="eyebrow">TRUSTINFO SOC</p>
         <h1>Console de supervision</h1>
       </div>
-      <span class="connection" id="connection-state">Déconnecté</span>
+      <div class="header-status">
+        <span class="connection" id="connection-state">Déconnecté</span>
+        <span class="wazuh-status" id="wazuh-state" role="status" aria-live="polite">
+          Wazuh : vérification…
+        </span>
+      </div>
     </header>
 
     <section class="panel login-panel" id="login-panel">

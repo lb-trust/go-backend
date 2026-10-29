@@ -655,6 +655,7 @@ func TestWazuhPollerIngestsAndDeduplicatesIndexerResults(t *testing.T) {
 		AlertsIndex: "wazuh-alerts-*",
 		BatchSize:   10,
 	}
+	backend.config.WazuhSources = []WazuhSource{source}
 	for range 2 {
 		if err := backend.pollWazuh(context.Background(), source); err != nil {
 			t.Fatal(err)
@@ -666,6 +667,47 @@ func TestWazuhPollerIngestsAndDeduplicatesIndexerResults(t *testing.T) {
 	}
 	if calls.Load() != 2 || len(alerts) != 1 || alerts[0].Occurrences != 1 {
 		t.Fatalf("polls=%d, alerts=%#v; want two polls and one occurrence", calls.Load(), alerts)
+	}
+	statuses := backend.WazuhStatus("tenant-a")
+	if len(statuses) != 1 || statuses[0].State != "receiving" ||
+		statuses[0].AlertsReceived != 1 || statuses[0].LastCheck == nil ||
+		statuses[0].LastSuccess == nil || statuses[0].LastAlert == nil {
+		t.Fatalf("Wazuh status after successful polls = %#v", statuses)
+	}
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/wazuh/status", nil)
+	request = request.WithContext(context.WithValue(request.Context(), tenantContextKey{}, "tenant-a"))
+	backend.wazuhStatusHandler(response, request)
+	var statusResponse struct {
+		Configured bool                `json:"configured"`
+		Sources    []WazuhSourceStatus `json:"sources"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&statusResponse); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusOK || !statusResponse.Configured ||
+		len(statusResponse.Sources) != 1 || statusResponse.Sources[0].State != "receiving" {
+		t.Fatalf("Wazuh status API response = (%d, %#v)", response.Code, statusResponse)
+	}
+}
+
+func TestWazuhPollStatusReportsConnectionFailure(t *testing.T) {
+	backend := testBackend(t, "")
+	source := WazuhSource{
+		TenantID:    "tenant-a",
+		URL:         "://invalid-url",
+		AlertsIndex: "wazuh-alerts-*",
+		BatchSize:   10,
+	}
+	backend.config.WazuhSources = []WazuhSource{source}
+	if err := backend.pollWazuh(context.Background(), source); err == nil {
+		t.Fatal("expected invalid Wazuh URL to fail")
+	}
+	statuses := backend.WazuhStatus("tenant-a")
+	if len(statuses) != 1 || statuses[0].State != "error" || statuses[0].Error == "" ||
+		statuses[0].LastCheck == nil || statuses[0].LastSuccess != nil {
+		t.Fatalf("Wazuh status after connection failure = %#v", statuses)
 	}
 }
 

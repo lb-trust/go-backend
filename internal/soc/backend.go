@@ -44,10 +44,12 @@ func (e *invalidAlertError) Unwrap() error {
 var errInvalidIncidentStatus = errors.New("status doit être open, investigating, resolved ou false_positive")
 
 type Backend struct {
-	config     Config
-	db         *sql.DB
-	httpClient *http.Client
-	workers    sync.WaitGroup
+	config        Config
+	db            *sql.DB
+	httpClient    *http.Client
+	workers       sync.WaitGroup
+	wazuhStatusMu sync.RWMutex
+	wazuhStatuses map[string]WazuhSourceStatus
 }
 
 type Alert struct {
@@ -104,7 +106,12 @@ func NewBackend(cfg Config) (*Backend, error) {
 		return nil, fmt.Errorf("ouvrir la base SQLite: %w", err)
 	}
 	db.SetMaxOpenConns(1)
-	backend := &Backend{config: cfg, db: db, httpClient: newHTTPClient()}
+	backend := &Backend{
+		config:        cfg,
+		db:            db,
+		httpClient:    newHTTPClient(),
+		wazuhStatuses: make(map[string]WazuhSourceStatus),
+	}
 	if _, err := db.Exec(`PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;`); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("configurer SQLite: %w", err)

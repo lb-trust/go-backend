@@ -128,6 +128,7 @@ Invoke-RestMethod http://127.0.0.1:8080/api/dashboard -Headers $headers
 | `GET /api/dashboard` | Compteurs et sévérités du client. |
 | `GET /api/clients` | Liste les groupes Wazuh présents pour le client du jeton connecté. |
 | `GET /api/control/ai` | État de la file IA et 100 derniers traitements. |
+| `GET /api/wazuh/status` | État du dernier contrôle de chaque source Wazuh, dernière alerte reçue et erreur éventuelle. |
 | `PATCH /api/control/ai` | Pause/reprise globale, corps `{"enabled":false}` ou `{"enabled":true}`. |
 | `GET /api/alerts?limit=100&since=...` | Groupes d'alertes récents. `since` est RFC3339. |
 | `POST /api/alerts` | Ingestion d'une alerte JSON Wazuh. |
