@@ -7,13 +7,18 @@ import (
 	"testing"
 )
 
-func loadConfigWithEnv(t *testing.T, tokenFile, tenantConfig string) Config {
+func loadConfigWithEnv(t *testing.T, tokenFile, tenantConfig string, clientAccess ...string) Config {
 	t.Helper()
 	t.Setenv("SOC_HOST", "")
 	t.Setenv("SOC_PORT", "")
 	t.Setenv("SOC_DB_PATH", "")
 	t.Setenv("SOC_API_TOKEN_FILE", tokenFile)
 	t.Setenv("SOC_TENANTS_JSON", tenantConfig)
+	accessConfig := ""
+	if len(clientAccess) > 0 {
+		accessConfig = clientAccess[0]
+	}
+	t.Setenv("SOC_CLIENT_ACCESS_JSON", accessConfig)
 	t.Setenv("OLLAMA_URL", "")
 	t.Setenv("OLLAMA_MODEL", "")
 	t.Setenv("WAZUH_SOURCES_JSON", "")
@@ -65,6 +70,16 @@ func TestLoadConfigKeepsExplicitTenantTokens(t *testing.T) {
 	}
 	if _, err := os.Stat(tokenFile); !os.IsNotExist(err) {
 		t.Fatalf("automatic token file should not be created; stat error = %v", err)
+	}
+}
+
+func TestLoadConfigAllowsExplicitMultiClientAccess(t *testing.T) {
+	config := loadConfigWithEnv(t, filepath.Join(t.TempDir(), "api-token"),
+		`{"operator-token":"client-a","client-b-token":"client-b"}`,
+		`{"operator-token":["client-a","client-b"]}`)
+	if got := config.ClientAccess["operator-token"]; len(got) != 2 ||
+		got[0] != "client-a" || got[1] != "client-b" {
+		t.Fatalf("operator client access = %#v, want [client-a client-b]", got)
 	}
 }
 

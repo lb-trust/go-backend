@@ -40,6 +40,10 @@
 
       <section class="filters" aria-label="Filtres des incidents">
         <label>
+          Client
+          <select id="client-filter" aria-label="Filtrer par client"></select>
+        </label>
+        <label>
           Statut
           <select id="status-filter">
             <option value="">Tous</option>
@@ -137,6 +141,7 @@
                 <th>État</th>
                 <th>Tentatives</th>
                 <th>Origine</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody id="queue-body"></tbody>

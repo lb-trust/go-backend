@@ -72,6 +72,7 @@ traitées à la reprise ; une requête Ollama déjà démarrée peut se terminer
 | Variable | Défaut | Description |
 | --- | --- | --- |
 | `SOC_TENANTS_JSON` | généré automatiquement | Objet JSON `jeton: identifiant_client`; permet une configuration multi-client. |
+| `SOC_CLIENT_ACCESS_JSON` | client associé dans `SOC_TENANTS_JSON` | Objet JSON `jeton: [clients_autorisés]`; permet à un jeton opérateur de filtrer plusieurs clients explicitement configurés. |
 | `SOC_API_TOKEN_FILE` | `.soc-api-token` | Fichier local qui conserve le jeton généré automatiquement. |
 | `SOC_DB_PATH` | `soc.db` | Chemin de la base SQLite. |
 | `SOC_HOST` / `SOC_PORT` | `0.0.0.0` / `8080` | Adresse et port d'écoute. Utilisez `127.0.0.1` pour limiter l'accès à la machine locale. |
@@ -82,6 +83,18 @@ traitées à la reprise ; une requête Ollama déjà démarrée peut se terminer
 | `IRIS_BASE_URL` | désactivé | Origine HTTPS IRIS, sans chemin final. |
 | `IRIS_API_KEY` | désactivé | Clé API IRIS ; jamais incluse dans les journaux. |
 | `IRIS_CASE_ID` | désactivé | Identifiant numérique du cas IRIS cible. |
+
+Exemple : le jeton `token-operateur` (associé à `client-a` dans
+`SOC_TENANTS_JSON`) peut consulter `client-a` et `client-b` :
+
+```powershell
+$env:SOC_TENANTS_JSON='{"token-operateur":"client-a","token-client-b":"client-b"}'
+$env:SOC_CLIENT_ACCESS_JSON='{"token-operateur":["client-a","client-b"]}'
+```
+
+Sans entrée correspondante dans `SOC_CLIENT_ACCESS_JSON`, chaque jeton reste
+limité au client qui lui est associé. Les clients autorisés doivent tous figurer
+parmi les valeurs de `SOC_TENANTS_JSON`.
 
 Exemple de collecte Wazuh. Utilisez un compte de service en lecture seule et
 laissez `verify_tls` à `true` en environnement normal :
@@ -118,15 +131,17 @@ Invoke-RestMethod http://127.0.0.1:8080/api/dashboard -Headers $headers
 | --- | --- |
 | `GET /health` | Santé du service, sans authentification. |
 | `GET /api/dashboard` | Compteurs et sévérités du client. |
-| `GET /api/control/ai` | État de la file IA et 100 derniers traitements. |
+| `GET /api/clients` | Liste les clients autorisés pour le jeton connecté. |
+| `GET /api/control/ai` | État de la file IA et 100 derniers traitements ; accepte `?client=...` si le jeton est autorisé. |
 | `PATCH /api/control/ai` | Pause/reprise globale, corps `{"enabled":false}` ou `{"enabled":true}`. |
 | `GET /api/alerts?limit=100&since=...` | Groupes d'alertes récents. `since` est RFC3339. |
 | `POST /api/alerts` | Ingestion d'une alerte JSON Wazuh. |
-| `GET /api/incidents?status=open&limit=100` | Liste d'incidents, avec statut facultatif. |
+| `GET /api/incidents?status=open&limit=100&client=...` | Liste d'incidents filtrable par statut et par client autorisé. |
 | `GET /api/incidents/{id}` | Incident, alertes liées et feedback. |
 | `PATCH /api/incidents/{id}` | Modification de `status` et/ou ajout de `feedback`. |
 | `POST /api/incidents/{id}/analyze` | Analyse manuelle avec Ollama. |
 | `POST /api/incidents/{id}/queue` | Forcer une nouvelle analyse via la file persistante. |
+| `DELETE /api/incidents/{id}/queue` | Retirer de la file un traitement en attente ou en échec. |
 
 Statuts d'incident autorisés : `open`, `investigating`, `resolved` et
 `false_positive`. Exemple :

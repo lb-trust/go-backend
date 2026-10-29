@@ -34,9 +34,11 @@ const incidentColumns = [
 ];
 const columnsKey = "soc-dashboard-incident-columns";
 const columnPicker = document.querySelector("#incident-columns");
+const clientFilter = document.querySelector("#client-filter");
 let visibleIncidentColumns = loadIncidentColumns();
 let latestIncidents = [];
 let latestAIEnabled = false;
+let authorizedClients = null;
 let refreshTimer;
 
 function loadIncidentColumns() {
@@ -75,6 +77,7 @@ function api(path, options = {}) {
       disconnect();
       throw new Error("Session expirée : reconnectez-vous avec votre jeton API.");
     }
+    if (response.status === 204) return null;
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || `Erreur HTTP ${response.status}`);
     return data;
@@ -94,6 +97,8 @@ function setConnected(connected) {
 
 function disconnect() {
   sessionStorage.removeItem(tokenKey);
+  authorizedClients = null;
+  clientFilter.replaceChildren();
   setConnected(false);
 }
 
@@ -202,6 +207,19 @@ function renderQueue(jobs) {
     badge(row, queueLabels[job.status] || job.status, job.status);
     cell(row, String(job.attempts));
     cell(row, job.forced ? "Forcée" : "Automatique");
+    const action = document.createElement("td");
+    if (job.status === "pending" || job.status === "failed") {
+      const button = document.createElement("button");
+      button.className = "row-action secondary";
+      button.type = "button";
+      button.textContent = "Retirer";
+      button.title = "Retirer ce traitement de la file";
+      button.addEventListener("click", () => removeQueuedAnalysis(button, job.incident_id));
+      action.append(button);
+    } else {
+      action.textContent = "—";
+    }
+    row.append(action);
     body.append(row);
   }
 }
@@ -210,12 +228,24 @@ async function refreshDashboard() {
   if (!sessionStorage.getItem(tokenKey)) return;
   try {
     pageMessage.textContent = "";
+    if (authorizedClients === null) {
+      authorizedClients = await api("/api/clients");
+      clientFilter.replaceChildren();
+      for (const client of authorizedClients) {
+        const option = document.createElement("option");
+        option.value = client;
+        option.textContent = client;
+        clientFilter.append(option);
+      }
+    }
+    const selectedClient = clientFilter.value;
     const status = document.querySelector("#status-filter").value;
     const query = new URLSearchParams({ limit: "100" });
+    query.set("client", selectedClient);
     if (status) query.set("status", status);
     const [incidents, control] = await Promise.all([
       api(`/api/incidents?${query}`),
-      api("/api/control/ai"),
+      api(`/api/control/ai?client=${encodeURIComponent(selectedClient)}`),
     ]);
     document.querySelector("#ai-state").textContent = control.enabled
       ? "Analyse IA activée"
@@ -237,7 +267,8 @@ async function refreshDashboard() {
 async function queueAnalysis(button, incidentID) {
   button.disabled = true;
   try {
-    await api(`/api/incidents/${encodeURIComponent(incidentID)}/queue`, { method: "POST" });
+    const selectedClient = encodeURIComponent(clientFilter.value);
+    await api(`/api/incidents/${encodeURIComponent(incidentID)}/queue?client=${selectedClient}`, { method: "POST" });
     pageMessage.textContent = "Analyse ajoutée à la file.";
     await refreshDashboard();
   } catch (error) {
@@ -245,6 +276,27 @@ async function queueAnalysis(button, incidentID) {
     button.disabled = false;
   }
 }
+
+async function removeQueuedAnalysis(button, incidentID) {
+  button.disabled = true;
+  try {
+    const selectedClient = encodeURIComponent(clientFilter.value);
+    await api(`/api/incidents/${encodeURIComponent(incidentID)}/queue?client=${selectedClient}`, {
+      method: "DELETE",
+    });
+    pageMessage.textContent = "Traitement retiré de la file.";
+    await refreshDashboard();
+  } catch (error) {
+    pageMessage.textContent = error.message;
+    button.disabled = false;
+  }
+}
+
+document.addEventListener("click", (event) => {
+  for (const tip of document.querySelectorAll(".help-tip[open]")) {
+    if (!tip.contains(event.target)) tip.open = false;
+  }
+});
 
 loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -272,6 +324,7 @@ document.querySelector("#toggle-ai").addEventListener("click", async (event) => 
 });
 
 document.querySelector("#refresh").addEventListener("click", refreshDashboard);
+clientFilter.addEventListener("change", refreshDashboard);
 document.querySelector("#status-filter").addEventListener("change", refreshDashboard);
 document.querySelector("#severity-filter").addEventListener("change", refreshDashboard);
 document.querySelector("#level-filter").addEventListener("input", refreshDashboard);

@@ -128,3 +128,35 @@ func (b *Backend) QueueIncidentAnalysis(ctx context.Context, tenantID, incidentI
 	}
 	return nil
 }
+
+func (b *Backend) RemoveQueuedIncidentAnalysis(ctx context.Context, tenantID, incidentID string) error {
+	result, err := b.db.ExecContext(ctx,
+		`DELETE FROM incident_ai_jobs
+		 WHERE incident_id = ? AND status IN ('pending', 'failed')
+		   AND EXISTS (SELECT 1 FROM incidents WHERE id = ? AND tenant_id = ?)`,
+		incidentID, incidentID, tenantID)
+	if err != nil {
+		return fmt.Errorf("retirer le traitement de la file IA: %w", err)
+	}
+	removed, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("vérifier le retrait du traitement de la file IA: %w", err)
+	}
+	if removed != 0 {
+		return nil
+	}
+	var status string
+	if err := b.db.QueryRowContext(ctx,
+		`SELECT j.status FROM incident_ai_jobs j
+		 JOIN incidents i ON i.id = j.incident_id
+		 WHERE i.tenant_id = ? AND i.id = ?`,
+		tenantID, incidentID).Scan(&status); err != nil {
+		return err
+	}
+	if status == "processing" {
+		return errAIJobInProgress
+	}
+	return errAIJobNotRemovable
+}
+
+var errAIJobNotRemovable = errors.New("seuls les traitements en attente ou en échec peuvent être retirés")

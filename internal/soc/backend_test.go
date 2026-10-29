@@ -2,7 +2,9 @@ package soc
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -308,6 +310,97 @@ func TestForceQueueReanalyzesCompletedIncidentAndChecksTenant(t *testing.T) {
 	}
 	if refreshed.Analysis != "" {
 		t.Fatalf("old analysis was not cleared before force reanalysis: %q", refreshed.Analysis)
+	}
+}
+
+func TestRemoveQueuedIncidentAnalysis(t *testing.T) {
+	backend := testBackend(t, "")
+	ctx := context.Background()
+	if _, _, err := backend.IngestAlert(ctx, "tenant-a",
+		alertPayload("remove-event", highAlertLevel, "remove-agent", "203.0.113.12")); err != nil {
+		t.Fatal(err)
+	}
+	incidents, err := backend.ListIncidents(ctx, "tenant-a", "", 10)
+	if err != nil || len(incidents) != 1 {
+		t.Fatalf("incidents = %#v, error = %v", incidents, err)
+	}
+	incidentID := incidents[0].ID
+	if err := backend.QueueIncidentAnalysis(ctx, "tenant-a", incidentID); err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.RemoveQueuedIncidentAnalysis(ctx, "tenant-b", incidentID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("remove with another tenant error = %v, want sql.ErrNoRows", err)
+	}
+	if err := backend.RemoveQueuedIncidentAnalysis(ctx, "tenant-a", incidentID); err != nil {
+		t.Fatalf("remove pending job: %v", err)
+	}
+	if err := backend.QueueIncidentAnalysis(ctx, "tenant-a", incidentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.db.Exec(`UPDATE incident_ai_jobs SET status = 'processing' WHERE incident_id = ?`, incidentID); err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.RemoveQueuedIncidentAnalysis(ctx, "tenant-a", incidentID); !errors.Is(err, errAIJobInProgress) {
+		t.Fatalf("remove processing job error = %v, want errAIJobInProgress", err)
+	}
+}
+
+func TestAPIClientFilterUsesExplicitTokenAccess(t *testing.T) {
+	backend, err := NewBackend(Config{
+		DatabasePath: filepath.Join(t.TempDir(), "soc.db"),
+		Tenants:      map[string]string{"token-a": "tenant-a", "token-b": "tenant-b"},
+		ClientAccess: map[string][]string{"token-a": {"tenant-a", "tenant-b"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := backend.Close(); err != nil {
+			t.Errorf("close backend: %v", err)
+		}
+	})
+	for _, tenant := range []string{"tenant-a", "tenant-b"} {
+		if _, _, err := backend.IngestAlert(context.Background(), tenant,
+			alertPayload("client-filter-"+tenant, highAlertLevel, "agent-"+tenant, "")); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	server := httptest.NewServer(backend.Handler())
+	defer server.Close()
+	request, err := http.NewRequest(http.MethodGet, server.URL+"/api/incidents?client=tenant-b", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer token-a")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("authorized client filter status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	var incidents []Incident
+	if err := json.NewDecoder(response.Body).Decode(&incidents); err != nil {
+		t.Fatal(err)
+	}
+	if len(incidents) != 1 || incidents[0].TenantID != "tenant-b" {
+		t.Fatalf("filtered incidents = %#v, want one tenant-b incident", incidents)
+	}
+
+	request, err = http.NewRequest(http.MethodGet, server.URL+"/api/incidents?client=tenant-c", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer token-a")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("unauthorized client filter status = %d, want %d", response.StatusCode, http.StatusForbidden)
 	}
 }
 

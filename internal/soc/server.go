@@ -24,6 +24,8 @@ func (b *Backend) Handler() http.Handler {
 	mux.Handle("GET /api/control/ai", b.authenticate(http.HandlerFunc(b.aiControlHandler)))
 	mux.Handle("PATCH /api/control/ai", b.authenticate(http.HandlerFunc(b.setAIControlHandler)))
 	mux.Handle("POST /api/incidents/{id}/queue", b.authenticate(http.HandlerFunc(b.queueIncidentHandler)))
+	mux.Handle("DELETE /api/incidents/{id}/queue", b.authenticate(http.HandlerFunc(b.removeQueuedIncidentHandler)))
+	mux.Handle("GET /api/clients", b.authenticate(http.HandlerFunc(b.listClientsHandler)))
 	mux.Handle("GET /api/alerts", b.authenticate(http.HandlerFunc(b.listAlertsHandler)))
 	mux.Handle("POST /api/alerts", b.authenticate(http.HandlerFunc(b.ingestAlertHandler)))
 	mux.Handle("GET /api/incidents", b.authenticate(http.HandlerFunc(b.listIncidentsHandler)))
@@ -42,7 +44,12 @@ func (b *Backend) Handler() http.Handler {
 }
 
 func (b *Backend) aiControlHandler(w http.ResponseWriter, r *http.Request) {
-	control, err := b.AIControl(r.Context(), tenantFromContext(r.Context()))
+	tenantID, ok := requestedTenant(r)
+	if !ok {
+		writeError(w, http.StatusForbidden, "client non autorisé")
+		return
+	}
+	control, err := b.AIControl(r.Context(), tenantID)
 	if err != nil {
 		writeInternalError(w, err)
 		return
@@ -75,7 +82,12 @@ func (b *Backend) setAIControlHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Backend) queueIncidentHandler(w http.ResponseWriter, r *http.Request) {
-	err := b.QueueIncidentAnalysis(r.Context(), tenantFromContext(r.Context()), r.PathValue("id"))
+	tenantID, ok := requestedTenant(r)
+	if !ok {
+		writeError(w, http.StatusForbidden, "client non autorisé")
+		return
+	}
+	err := b.QueueIncidentAnalysis(r.Context(), tenantID, r.PathValue("id"))
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "incident introuvable")
 		return
@@ -88,12 +100,43 @@ func (b *Backend) queueIncidentHandler(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err)
 		return
 	}
-	control, err := b.AIControl(r.Context(), tenantFromContext(r.Context()))
+	control, err := b.AIControl(r.Context(), tenantID)
 	if err != nil {
 		writeInternalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, control)
+}
+
+func (b *Backend) removeQueuedIncidentHandler(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requestedTenant(r)
+	if !ok {
+		writeError(w, http.StatusForbidden, "client non autorisé")
+		return
+	}
+	err := b.RemoveQueuedIncidentAnalysis(r.Context(), tenantID, r.PathValue("id"))
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "traitement introuvable")
+		return
+	}
+	if errors.Is(err, errAIJobInProgress) {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	if errors.Is(err, errAIJobNotRemovable) {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (b *Backend) listClientsHandler(w http.ResponseWriter, r *http.Request) {
+	clients, _ := r.Context().Value(authorizedClientsContextKey{}).([]string)
+	writeJSON(w, http.StatusOK, clients)
 }
 
 func (b *Backend) authenticate(next http.Handler) http.Handler {
@@ -105,15 +148,33 @@ func (b *Backend) authenticate(next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, "jeton API invalide")
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), tenantContextKey{}, tenantID)))
+		clients, _ := b.ClientsForToken(token)
+		ctx := context.WithValue(r.Context(), tenantContextKey{}, tenantID)
+		ctx = context.WithValue(ctx, authorizedClientsContextKey{}, clients)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
 type tenantContextKey struct{}
+type authorizedClientsContextKey struct{}
 
 func tenantFromContext(ctx context.Context) string {
 	tenantID, _ := ctx.Value(tenantContextKey{}).(string)
 	return tenantID
+}
+
+func requestedTenant(r *http.Request) (string, bool) {
+	selected := r.URL.Query().Get("client")
+	if selected == "" {
+		return tenantFromContext(r.Context()), true
+	}
+	clients, _ := r.Context().Value(authorizedClientsContextKey{}).([]string)
+	for _, client := range clients {
+		if client == selected {
+			return selected, true
+		}
+	}
+	return "", false
 }
 
 func (b *Backend) dashboardHandler(w http.ResponseWriter, r *http.Request) {
@@ -171,6 +232,11 @@ func (b *Backend) ingestAlertHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Backend) listIncidentsHandler(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requestedTenant(r)
+	if !ok {
+		writeError(w, http.StatusForbidden, "client non autorisé")
+		return
+	}
 	limit, err := queryLimit(r, 100, 500)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -181,7 +247,7 @@ func (b *Backend) listIncidentsHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "status invalide")
 		return
 	}
-	incidents, err := b.ListIncidents(r.Context(), tenantFromContext(r.Context()), status, limit)
+	incidents, err := b.ListIncidents(r.Context(), tenantID, status, limit)
 	if err != nil {
 		writeInternalError(w, err)
 		return

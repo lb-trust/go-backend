@@ -831,6 +831,25 @@ func (b *Backend) TenantForToken(token string) (string, bool) {
 	return matchedTenant, matched == 1
 }
 
+func (b *Backend) ClientsForToken(token string) ([]string, bool) {
+	tenantID, ok := b.TenantForToken(token)
+	if !ok {
+		return nil, false
+	}
+	clients, configured := b.config.ClientAccess[token]
+	if !configured {
+		return []string{tenantID}, true
+	}
+	authorized := make([]string, 0, len(clients))
+	authorized = append(authorized, tenantID)
+	for _, client := range clients {
+		if client != tenantID {
+			authorized = append(authorized, client)
+		}
+	}
+	return authorized, true
+}
+
 func intValue(value any) int {
 	switch typed := value.(type) {
 	case int:

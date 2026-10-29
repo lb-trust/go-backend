@@ -18,6 +18,7 @@ type Config struct {
 	Port              int
 	DatabasePath      string
 	Tenants           map[string]string
+	ClientAccess      map[string][]string
 	GeneratedToken    string
 	TokenFilePath     string
 	OllamaURL         string
@@ -80,6 +81,29 @@ func LoadConfig() (Config, error) {
 		if strings.TrimSpace(token) == "" || token != strings.TrimSpace(token) ||
 			strings.TrimSpace(tenant) == "" {
 			return Config{}, errors.New("les jetons et identifiants clients ne peuvent pas être vides")
+		}
+	}
+	if err := decodeEnvJSON("SOC_CLIENT_ACCESS_JSON", &cfg.ClientAccess, map[string][]string{}); err != nil {
+		return Config{}, err
+	}
+	for token, clients := range cfg.ClientAccess {
+		defaultClient, tokenExists := cfg.Tenants[token]
+		if !tokenExists || len(clients) == 0 {
+			return Config{}, errors.New("SOC_CLIENT_ACCESS_JSON doit associer un jeton configuré à au moins un client")
+		}
+		seen := make(map[string]bool, len(clients))
+		for _, client := range clients {
+			if strings.TrimSpace(client) == "" || client != strings.TrimSpace(client) ||
+				!tenantExists(cfg.Tenants, client) {
+				return Config{}, fmt.Errorf("SOC_CLIENT_ACCESS_JSON référence un client non configuré pour le jeton %q", token)
+			}
+			if seen[client] {
+				return Config{}, fmt.Errorf("SOC_CLIENT_ACCESS_JSON contient le client %q plusieurs fois pour le jeton %q", client, token)
+			}
+			seen[client] = true
+		}
+		if !seen[defaultClient] {
+			return Config{}, fmt.Errorf("SOC_CLIENT_ACCESS_JSON doit inclure le client par défaut %q du jeton %q", defaultClient, token)
 		}
 	}
 
