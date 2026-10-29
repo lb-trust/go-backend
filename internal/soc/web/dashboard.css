@@ -51,6 +51,13 @@ input, select { border: 1px solid #d0d5dd; border-radius: 7px; color: #172033; m
 .filters { flex-wrap: wrap; margin: 0 0 18px; }
 .filters label { min-width: 155px; }
 .filter-label { align-items: center; display: flex; gap: 6px; }
+.client-picker { display: grid; gap: 6px; min-width: 180px; }
+#client-filter { position: relative; }
+#client-filter summary { border-radius: 7px; cursor: pointer; font-weight: 650; list-style: none; padding: 10px 15px; }
+#client-filter summary::-webkit-details-marker { display: none; }
+#client-options { background: #fff; border: 1px solid #d0d5dd; border-radius: 8px; box-shadow: 0 8px 20px #1018281a; display: grid; gap: 9px; margin: 8px 0 0; min-width: 220px; padding: 12px; position: absolute; z-index: 2; }
+#client-options label { align-items: center; display: flex; font-size: .82rem; font-weight: 500; gap: 8px; white-space: nowrap; }
+#client-options input { min-height: 0; }
 .column-picker { position: relative; }
 .column-picker summary { border-radius: 7px; cursor: pointer; font-weight: 650; list-style: none; padding: 10px 15px; }
 .column-picker summary::-webkit-details-marker { display: none; }

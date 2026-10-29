@@ -9,6 +9,7 @@ import (
 
 type AIJob struct {
 	IncidentID string    `json:"incident_id"`
+	TenantID   string    `json:"tenant_id"`
 	Title      string    `json:"title"`
 	Severity   string    `json:"severity"`
 	Status     string    `json:"status"`
@@ -31,7 +32,7 @@ func (b *Backend) AIControl(ctx context.Context, tenantID string) (AIControl, er
 		return AIControl{}, fmt.Errorf("lire le réglage de la file IA: %w", err)
 	}
 	rows, err := b.db.QueryContext(ctx,
-		`SELECT j.incident_id, i.title, i.severity, j.status, j.attempts, j.forced, j.created_at
+		`SELECT j.incident_id, i.tenant_id, i.title, i.severity, j.status, j.attempts, j.forced, j.created_at
 		 FROM incident_ai_jobs j
 		 JOIN incidents i ON i.id = j.incident_id
 		 WHERE i.tenant_id = ?
@@ -52,7 +53,7 @@ func (b *Backend) AIControl(ctx context.Context, tenantID string) (AIControl, er
 		var job AIJob
 		var createdAt string
 		var forced int
-		if err := rows.Scan(&job.IncidentID, &job.Title, &job.Severity,
+		if err := rows.Scan(&job.IncidentID, &job.TenantID, &job.Title, &job.Severity,
 			&job.Status, &job.Attempts, &forced, &createdAt); err != nil {
 			return AIControl{}, fmt.Errorf("lire une tâche de la file IA: %w", err)
 		}

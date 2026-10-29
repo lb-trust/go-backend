@@ -345,11 +345,10 @@ func TestRemoveQueuedIncidentAnalysis(t *testing.T) {
 	}
 }
 
-func TestAPIClientFilterUsesExplicitTokenAccess(t *testing.T) {
+func TestAPIClientFilterWorksWithExistingToken(t *testing.T) {
 	backend, err := NewBackend(Config{
 		DatabasePath: filepath.Join(t.TempDir(), "soc.db"),
 		Tenants:      map[string]string{"token-a": "tenant-a", "token-b": "tenant-b"},
-		ClientAccess: map[string][]string{"token-a": {"tenant-a", "tenant-b"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -368,12 +367,32 @@ func TestAPIClientFilterUsesExplicitTokenAccess(t *testing.T) {
 
 	server := httptest.NewServer(backend.Handler())
 	defer server.Close()
-	request, err := http.NewRequest(http.MethodGet, server.URL+"/api/incidents?client=tenant-b", nil)
+	request, err := http.NewRequest(http.MethodGet, server.URL+"/api/clients", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	request.Header.Set("Authorization", "Bearer token-a")
 	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var clients []string
+	if err := json.NewDecoder(response.Body).Decode(&clients); err != nil {
+		response.Body.Close()
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(clients) != 2 ||
+		clients[0] != "tenant-a" || clients[1] != "tenant-b" {
+		t.Fatalf("clients response = (%d, %#v), want both configured clients", response.StatusCode, clients)
+	}
+
+	request, err = http.NewRequest(http.MethodGet, server.URL+"/api/incidents?client=tenant-b", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer token-a")
+	response, err = http.DefaultClient.Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -39,10 +39,13 @@
       </section>
 
       <section class="filters" aria-label="Filtres des incidents">
-        <label>
-          Client
-          <select id="client-filter" aria-label="Filtrer par client"></select>
-        </label>
+        <div class="client-picker">
+          <span class="filter-label">Clients</span>
+          <details id="client-filter">
+            <summary class="secondary">Chargement des clients…</summary>
+            <fieldset id="client-options" aria-label="Clients à afficher"></fieldset>
+          </details>
+        </div>
         <label>
           Statut
           <select id="status-filter">
@@ -136,6 +139,7 @@
           <table>
             <thead>
               <tr>
+                <th>Client</th>
                 <th>Incident</th>
                 <th>Sévérité</th>
                 <th>État</th>

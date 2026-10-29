@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -44,7 +45,7 @@ func (b *Backend) Handler() http.Handler {
 }
 
 func (b *Backend) aiControlHandler(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requestedTenant(r)
+	tenantID, ok := b.requestedTenant(r)
 	if !ok {
 		writeError(w, http.StatusForbidden, "client non autorisé")
 		return
@@ -82,7 +83,7 @@ func (b *Backend) setAIControlHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Backend) queueIncidentHandler(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requestedTenant(r)
+	tenantID, ok := b.requestedTenant(r)
 	if !ok {
 		writeError(w, http.StatusForbidden, "client non autorisé")
 		return
@@ -109,7 +110,7 @@ func (b *Backend) queueIncidentHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Backend) removeQueuedIncidentHandler(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requestedTenant(r)
+	tenantID, ok := b.requestedTenant(r)
 	if !ok {
 		writeError(w, http.StatusForbidden, "client non autorisé")
 		return
@@ -135,7 +136,15 @@ func (b *Backend) removeQueuedIncidentHandler(w http.ResponseWriter, r *http.Req
 }
 
 func (b *Backend) listClientsHandler(w http.ResponseWriter, r *http.Request) {
-	clients, _ := r.Context().Value(authorizedClientsContextKey{}).([]string)
+	clients := make([]string, 0, len(b.config.Tenants))
+	seen := make(map[string]bool, len(b.config.Tenants))
+	for _, client := range b.config.Tenants {
+		if !seen[client] {
+			clients = append(clients, client)
+			seen[client] = true
+		}
+	}
+	sort.Strings(clients)
 	writeJSON(w, http.StatusOK, clients)
 }
 
@@ -148,33 +157,24 @@ func (b *Backend) authenticate(next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, "jeton API invalide")
 			return
 		}
-		clients, _ := b.ClientsForToken(token)
 		ctx := context.WithValue(r.Context(), tenantContextKey{}, tenantID)
-		ctx = context.WithValue(ctx, authorizedClientsContextKey{}, clients)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
 type tenantContextKey struct{}
-type authorizedClientsContextKey struct{}
 
 func tenantFromContext(ctx context.Context) string {
 	tenantID, _ := ctx.Value(tenantContextKey{}).(string)
 	return tenantID
 }
 
-func requestedTenant(r *http.Request) (string, bool) {
+func (b *Backend) requestedTenant(r *http.Request) (string, bool) {
 	selected := r.URL.Query().Get("client")
 	if selected == "" {
 		return tenantFromContext(r.Context()), true
 	}
-	clients, _ := r.Context().Value(authorizedClientsContextKey{}).([]string)
-	for _, client := range clients {
-		if client == selected {
-			return selected, true
-		}
-	}
-	return "", false
+	return selected, tenantExists(b.config.Tenants, selected)
 }
 
 func (b *Backend) dashboardHandler(w http.ResponseWriter, r *http.Request) {
@@ -232,7 +232,7 @@ func (b *Backend) ingestAlertHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Backend) listIncidentsHandler(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requestedTenant(r)
+	tenantID, ok := b.requestedTenant(r)
 	if !ok {
 		writeError(w, http.StatusForbidden, "client non autorisé")
 		return
