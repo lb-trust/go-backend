@@ -111,10 +111,10 @@ locaux avec certificats non approuvés.
 ## API
 
 Les routes `/api/...` attendent `Authorization: Bearer <jeton>` et ne renvoient
-que les données des clients sélectionnés dans le tableau de bord. Le filtre
-Clients affiche les clients configurés pour le jeton connecté. Protégez ce jeton
-comme un accès opérateur aux données de tous ces clients. Copiez le jeton affiché
-au démarrage :
+que les données du client associé au jeton. Dans le tableau de bord, le filtre
+« Groupes client » utilise les valeurs `agent.labels.group` des alertes Wazuh,
+par exemple `ClientA` et `ClientB`, pour choisir les groupes affichés.
+Copiez le jeton affiché au démarrage :
 
 ```powershell
 $env:SOC_API_TOKEN='coller-ici-le-jeton-affiche'
@@ -126,12 +126,12 @@ Invoke-RestMethod http://127.0.0.1:8080/api/dashboard -Headers $headers
 | --- | --- |
 | `GET /health` | Santé du service, sans authentification. |
 | `GET /api/dashboard` | Compteurs et sévérités du client. |
-| `GET /api/clients` | Liste les clients configurés. |
-| `GET /api/control/ai` | État de la file IA et 100 derniers traitements ; accepte `?client=...` pour filtrer un client configuré. |
+| `GET /api/clients` | Liste les groupes Wazuh présents pour le client du jeton connecté. |
+| `GET /api/control/ai` | État de la file IA et 100 derniers traitements. |
 | `PATCH /api/control/ai` | Pause/reprise globale, corps `{"enabled":false}` ou `{"enabled":true}`. |
 | `GET /api/alerts?limit=100&since=...` | Groupes d'alertes récents. `since` est RFC3339. |
 | `POST /api/alerts` | Ingestion d'une alerte JSON Wazuh. |
-| `GET /api/incidents?status=open&limit=100&client=...` | Liste d'incidents filtrable par statut et par client configuré. |
+| `GET /api/incidents?status=open&limit=100` | Liste d'incidents, avec statut facultatif. |
 | `GET /api/incidents/{id}` | Incident, alertes liées et feedback. |
 | `PATCH /api/incidents/{id}` | Modification de `status` et/ou ajout de `feedback`. |
 | `POST /api/incidents/{id}/analyze` | Analyse manuelle avec Ollama. |

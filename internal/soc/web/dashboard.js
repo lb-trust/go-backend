@@ -38,9 +38,8 @@ const clientFilter = document.querySelector("#client-filter");
 const clientOptions = document.querySelector("#client-options");
 let visibleIncidentColumns = loadIncidentColumns();
 let latestIncidents = [];
-let latestJobs = [];
 let latestAIEnabled = false;
-let configuredClients = null;
+let configuredGroups = null;
 let refreshTimer;
 
 function loadIncidentColumns() {
@@ -99,7 +98,7 @@ function setConnected(connected) {
 
 function disconnect() {
   sessionStorage.removeItem(tokenKey);
-  configuredClients = null;
+  configuredGroups = null;
   clientOptions.replaceChildren();
   setConnected(false);
 }
@@ -117,29 +116,29 @@ function updateClientFilterSummary() {
   allOption.indeterminate = selected.length > 0 && selected.length < clients.length;
   const summary = clientFilter.querySelector("summary");
   summary.textContent = selected.length === clients.length
-    ? "Tous les clients"
+    ? "Tous les groupes"
     : selected.length === 1
       ? selected[0]
-      : `${selected.length} client(s) sélectionné(s)`;
+      : `${selected.length} groupe(s) sélectionné(s)`;
 }
 
-function initializeClientFilter(clients) {
-  configuredClients = clients;
+function initializeClientFilter(groups) {
+  configuredGroups = groups;
   const allLabel = document.createElement("label");
   const allCheckbox = document.createElement("input");
   allCheckbox.type = "checkbox";
   allCheckbox.id = "all-clients";
   allCheckbox.checked = true;
-  allLabel.append(allCheckbox, " Tous les clients");
+  allLabel.append(allCheckbox, " Tous les groupes");
   clientOptions.replaceChildren(allLabel);
-  for (const client of clients) {
+  for (const group of groups) {
     const label = document.createElement("label");
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
-    checkbox.value = client;
+    checkbox.value = group;
     checkbox.dataset.client = "true";
     checkbox.checked = true;
-    label.append(checkbox, ` ${client}`);
+    label.append(checkbox, ` ${group}`);
     clientOptions.append(label);
   }
   allCheckbox.addEventListener("change", () => {
@@ -188,8 +187,12 @@ function renderIncidents(incidents, enabled) {
   body.replaceChildren();
   const minLevel = Number(document.querySelector("#level-filter").value || 0);
   const severity = document.querySelector("#severity-filter").value;
+  const selected = selectedClients();
   const filtered = incidents.filter((incident) =>
-    incident.rule_level >= minLevel && (!severity || incident.severity === severity));
+    incident.rule_level >= minLevel &&
+    (!severity || incident.severity === severity) &&
+    (selected.length === configuredGroups.length ||
+      (incident.agent_groups || []).some((group) => selected.includes(group))));
   document.querySelector("#incident-count").textContent = `${filtered.length} affiché(s)`;
   document.querySelector("#empty-incidents").hidden = filtered.length !== 0;
 
@@ -252,13 +255,16 @@ function renderIncidents(incidents, enabled) {
 }
 
 function renderQueue(jobs) {
-  latestJobs = jobs;
+  const selected = selectedClients();
+  const filteredJobs = jobs.filter((job) =>
+    selected.length === configuredGroups.length ||
+    (job.agent_groups || []).some((group) => selected.includes(group)));
   const body = document.querySelector("#queue-body");
   body.replaceChildren();
-  document.querySelector("#empty-queue").hidden = jobs.length !== 0;
-  for (const job of jobs) {
+  document.querySelector("#empty-queue").hidden = filteredJobs.length !== 0;
+  for (const job of filteredJobs) {
     const row = document.createElement("tr");
-    cell(row, job.tenant_id);
+    cell(row, (job.agent_groups || []).join(", ") || "—");
     const title = cell(row, job.title);
     title.title = `ID : ${job.incident_id}`;
     badge(row, job.severity, job.severity);
@@ -286,23 +292,17 @@ async function refreshDashboard() {
   if (!sessionStorage.getItem(tokenKey)) return;
   try {
     pageMessage.textContent = "";
-    if (configuredClients === null) {
+    if (configuredGroups === null) {
       initializeClientFilter(await api("/api/clients"));
     }
-    const clients = selectedClients();
     const status = document.querySelector("#status-filter").value;
-    const [incidentLists, controls] = await Promise.all([
-      Promise.all(clients.map((client) => {
-        const query = new URLSearchParams({ limit: "100", client });
-        if (status) query.set("status", status);
-        return api(`/api/incidents?${query}`);
-      })),
-      Promise.all(clients.map((client) =>
-        api(`/api/control/ai?client=${encodeURIComponent(client)}`))),
+    const query = new URLSearchParams({ limit: "500" });
+    if (status) query.set("status", status);
+    const [incidents, control] = await Promise.all([
+      api(`/api/incidents?${query}`),
+      api("/api/control/ai"),
     ]);
-    const incidents = incidentLists.flat();
-    const control = controls[0] || await api("/api/control/ai");
-    const queue = controls.flatMap((item) => item.queue);
+    const queue = control.queue;
     queue.sort((a, b) => {
       const priority = { processing: 0, pending: 1, failed: 2, done: 3 };
       return priority[a.status] - priority[b.status] ||
@@ -328,9 +328,7 @@ async function refreshDashboard() {
 async function queueAnalysis(button, incidentID) {
   button.disabled = true;
   try {
-    const incident = latestIncidents.find((item) => item.id === incidentID);
-    const selectedClient = encodeURIComponent(incident.tenant_id);
-    await api(`/api/incidents/${encodeURIComponent(incidentID)}/queue?client=${selectedClient}`, { method: "POST" });
+    await api(`/api/incidents/${encodeURIComponent(incidentID)}/queue`, { method: "POST" });
     pageMessage.textContent = "Analyse ajoutée à la file.";
     await refreshDashboard();
   } catch (error) {
@@ -342,10 +340,7 @@ async function queueAnalysis(button, incidentID) {
 async function removeQueuedAnalysis(button, incidentID) {
   button.disabled = true;
   try {
-    const job = latestJobs.find((item) => item.incident_id === incidentID);
-    if (!job) throw new Error("Traitement introuvable dans la file affichée.");
-    const selectedClient = encodeURIComponent(job.tenant_id);
-    await api(`/api/incidents/${encodeURIComponent(incidentID)}/queue?client=${selectedClient}`, {
+    await api(`/api/incidents/${encodeURIComponent(incidentID)}/queue`, {
       method: "DELETE",
     });
     pageMessage.textContent = "Traitement retiré de la file.";

@@ -2,20 +2,22 @@ package soc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 )
 
 type AIJob struct {
-	IncidentID string    `json:"incident_id"`
-	TenantID   string    `json:"tenant_id"`
-	Title      string    `json:"title"`
-	Severity   string    `json:"severity"`
-	Status     string    `json:"status"`
-	Attempts   int       `json:"attempts"`
-	Forced     bool      `json:"forced"`
-	CreatedAt  time.Time `json:"created_at"`
+	IncidentID  string    `json:"incident_id"`
+	TenantID    string    `json:"tenant_id"`
+	AgentGroups []string  `json:"agent_groups"`
+	Title       string    `json:"title"`
+	Severity    string    `json:"severity"`
+	Status      string    `json:"status"`
+	Attempts    int       `json:"attempts"`
+	Forced      bool      `json:"forced"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type AIControl struct {
@@ -32,7 +34,11 @@ func (b *Backend) AIControl(ctx context.Context, tenantID string) (AIControl, er
 		return AIControl{}, fmt.Errorf("lire le réglage de la file IA: %w", err)
 	}
 	rows, err := b.db.QueryContext(ctx,
-		`SELECT j.incident_id, i.tenant_id, i.title, i.severity, j.status, j.attempts, j.forced, j.created_at
+		`SELECT j.incident_id, i.tenant_id, i.title, i.severity, j.status, j.attempts, j.forced, j.created_at,
+		        COALESCE((SELECT ag.raw_json FROM incident_alerts ia
+		                  JOIN alert_groups ag ON ag.id = ia.alert_id
+		                  WHERE ia.incident_id = i.id
+		                  ORDER BY ag.last_seen DESC LIMIT 1), '{}')
 		 FROM incident_ai_jobs j
 		 JOIN incidents i ON i.id = j.incident_id
 		 WHERE i.tenant_id = ?
@@ -51,14 +57,18 @@ func (b *Backend) AIControl(ctx context.Context, tenantID string) (AIControl, er
 	control := AIControl{Enabled: enabledValue == "true", Queue: make([]AIJob, 0)}
 	for rows.Next() {
 		var job AIJob
-		var createdAt string
+		var createdAt, agentRaw string
 		var forced int
 		if err := rows.Scan(&job.IncidentID, &job.TenantID, &job.Title, &job.Severity,
-			&job.Status, &job.Attempts, &forced, &createdAt); err != nil {
+			&job.Status, &job.Attempts, &forced, &createdAt, &agentRaw); err != nil {
 			return AIControl{}, fmt.Errorf("lire une tâche de la file IA: %w", err)
 		}
 		job.Forced = forced != 0
 		job.CreatedAt = parseStoredTime(createdAt)
+		_, _, job.AgentGroups, err = agentMetadata(json.RawMessage(agentRaw))
+		if err != nil {
+			return AIControl{}, fmt.Errorf("lire les groupes de l'agent du traitement: %w", err)
+		}
 		control.Queue = append(control.Queue, job)
 	}
 	if err := rows.Err(); err != nil {

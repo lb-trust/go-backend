@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -619,6 +620,39 @@ func (b *Backend) ListAlerts(ctx context.Context, tenantID string, limit int, si
 		alerts = []Alert{}
 	}
 	return alerts, nil
+}
+
+func (b *Backend) ListAgentGroups(ctx context.Context, tenantID string) ([]string, error) {
+	rows, err := b.db.QueryContext(ctx,
+		`SELECT raw_json FROM alert_groups WHERE tenant_id = ? ORDER BY last_seen DESC`,
+		tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("lire les groupes des agents: %w", err)
+	}
+	defer rows.Close()
+	seen := make(map[string]bool)
+	groups := make([]string, 0)
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("lire une alerte pour ses groupes: %w", err)
+		}
+		_, _, agentGroups, err := agentMetadata(json.RawMessage(raw))
+		if err != nil {
+			return nil, fmt.Errorf("extraire les groupes d'un agent: %w", err)
+		}
+		for _, group := range agentGroups {
+			if !seen[group] {
+				seen[group] = true
+				groups = append(groups, group)
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("parcourir les groupes des agents: %w", err)
+	}
+	sort.Strings(groups)
+	return groups, nil
 }
 
 func (b *Backend) ListIncidents(ctx context.Context, tenantID, status string, limit int) ([]Incident, error) {

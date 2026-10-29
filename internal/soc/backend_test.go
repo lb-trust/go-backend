@@ -345,7 +345,7 @@ func TestRemoveQueuedIncidentAnalysis(t *testing.T) {
 	}
 }
 
-func TestAPIClientFilterWorksWithExistingToken(t *testing.T) {
+func TestAPIListsAgentGroupsForExistingToken(t *testing.T) {
 	backend, err := NewBackend(Config{
 		DatabasePath: filepath.Join(t.TempDir(), "soc.db"),
 		Tenants:      map[string]string{"token-a": "tenant-a", "token-b": "tenant-b"},
@@ -358,9 +358,10 @@ func TestAPIClientFilterWorksWithExistingToken(t *testing.T) {
 			t.Errorf("close backend: %v", err)
 		}
 	})
-	for _, tenant := range []string{"tenant-a", "tenant-b"} {
-		if _, _, err := backend.IngestAlert(context.Background(), tenant,
-			alertPayload("client-filter-"+tenant, highAlertLevel, "agent-"+tenant, "")); err != nil {
+	for _, group := range []string{"ClientA", "ClientB"} {
+		payload := alertPayload("client-filter-"+group, highAlertLevel, "agent-"+group, "")
+		payload["agent"].(map[string]any)["labels"] = map[string]any{"group": group}
+		if _, _, err := backend.IngestAlert(context.Background(), "tenant-a", payload); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -383,11 +384,11 @@ func TestAPIClientFilterWorksWithExistingToken(t *testing.T) {
 	}
 	response.Body.Close()
 	if response.StatusCode != http.StatusOK || len(clients) != 2 ||
-		clients[0] != "tenant-a" || clients[1] != "tenant-b" {
-		t.Fatalf("clients response = (%d, %#v), want both configured clients", response.StatusCode, clients)
+		clients[0] != "ClientA" || clients[1] != "ClientB" {
+		t.Fatalf("group response = (%d, %#v), want ClientA and ClientB", response.StatusCode, clients)
 	}
 
-	request, err = http.NewRequest(http.MethodGet, server.URL+"/api/incidents?client=tenant-b", nil)
+	request, err = http.NewRequest(http.MethodGet, server.URL+"/api/incidents?limit=500", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,14 +399,20 @@ func TestAPIClientFilterWorksWithExistingToken(t *testing.T) {
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		t.Fatalf("authorized client filter status = %d, want %d", response.StatusCode, http.StatusOK)
+		t.Fatalf("incidents response status = %d, want %d", response.StatusCode, http.StatusOK)
 	}
 	var incidents []Incident
 	if err := json.NewDecoder(response.Body).Decode(&incidents); err != nil {
 		t.Fatal(err)
 	}
-	if len(incidents) != 1 || incidents[0].TenantID != "tenant-b" {
-		t.Fatalf("filtered incidents = %#v, want one tenant-b incident", incidents)
+	if len(incidents) != 2 {
+		t.Fatalf("incident count = %d, want 2", len(incidents))
+	}
+	for _, incident := range incidents {
+		if incident.TenantID != "tenant-a" || len(incident.AgentGroups) != 1 ||
+			(incident.AgentGroups[0] != "ClientA" && incident.AgentGroups[0] != "ClientB") {
+			t.Fatalf("incident group/tenant = %#v", incident)
+		}
 	}
 
 	request, err = http.NewRequest(http.MethodGet, server.URL+"/api/incidents?client=tenant-c", nil)
@@ -417,9 +424,19 @@ func TestAPIClientFilterWorksWithExistingToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var unfilteredIncidents []Incident
+	if err := json.NewDecoder(response.Body).Decode(&unfilteredIncidents); err != nil {
+		response.Body.Close()
+		t.Fatal(err)
+	}
 	response.Body.Close()
-	if response.StatusCode != http.StatusForbidden {
-		t.Fatalf("unauthorized client filter status = %d, want %d", response.StatusCode, http.StatusForbidden)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("unfiltered incidents status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	for _, incident := range unfilteredIncidents {
+		if incident.TenantID != "tenant-a" {
+			t.Fatalf("client query escaped token tenant: %#v", incident)
+		}
 	}
 }
 
