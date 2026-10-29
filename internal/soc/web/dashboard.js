@@ -40,6 +40,7 @@ let visibleIncidentColumns = loadIncidentColumns();
 let latestIncidents = [];
 let latestAIEnabled = false;
 let configuredGroups = null;
+let activeIncidentID = "";
 let refreshTimer;
 
 function loadIncidentColumns() {
@@ -138,6 +139,9 @@ function disconnect() {
   sessionStorage.removeItem(tokenKey);
   configuredGroups = null;
   clientOptions.replaceChildren();
+  const incidentDialog = document.querySelector("#incident-dialog");
+  if (incidentDialog.open) incidentDialog.close();
+  activeIncidentID = "";
   setConnected(false);
 }
 
@@ -236,6 +240,18 @@ function renderIncidents(incidents, enabled) {
 
   for (const incident of filtered) {
     const row = document.createElement("tr");
+    row.className = "incident-row";
+    row.tabIndex = 0;
+    row.setAttribute("aria-label", `Ouvrir le détail de l’incident : ${incident.title}`);
+    row.addEventListener("click", (event) => {
+      if (!event.target.closest("button")) openIncidentDetails(incident.id);
+    });
+    row.addEventListener("keydown", (event) => {
+      if ((event.key === "Enter" || event.key === " ") && !event.target.closest("button")) {
+        event.preventDefault();
+        openIncidentDetails(incident.id);
+      }
+    });
     for (const column of columns) {
       switch (column.key) {
         case "incident": {
@@ -289,6 +305,76 @@ function renderIncidents(incidents, enabled) {
       }
     }
     body.append(row);
+  }
+}
+
+function setIncidentDetail(incident) {
+  document.querySelector("#incident-dialog-title").textContent = incident.title;
+  document.querySelector("#detail-severity").textContent =
+    `${incident.severity} · ${incident.score}/100`;
+  document.querySelector("#detail-current-status").textContent =
+    statusLabels[incident.status] || incident.status;
+  document.querySelector("#detail-agent").textContent =
+    incident.agent_name || incident.agent_id || "—";
+  document.querySelector("#detail-groups").textContent =
+    (incident.agent_groups || []).join(", ") || "—";
+  document.querySelector("#detail-agent-ip").textContent = incident.agent_ip || "—";
+  document.querySelector("#detail-source-ip").textContent = incident.source_ip || "—";
+  document.querySelector("#detail-level").textContent = `${incident.rule_level}/15`;
+  document.querySelector("#detail-occurrences").textContent = String(incident.occurrences);
+  document.querySelector("#detail-created").textContent = formatStatusTime(incident.created_at);
+  document.querySelector("#detail-updated").textContent = formatStatusTime(incident.updated_at);
+  document.querySelector("#detail-analysis").textContent = incident.analysis ||
+    "Aucune analyse IA disponible pour cet incident.";
+  document.querySelector("#incident-status").value = incident.status;
+
+  const alertContainer = document.querySelector("#detail-alerts");
+  alertContainer.replaceChildren();
+  for (const alert of incident.alerts || []) {
+    const item = document.createElement("article");
+    item.className = "incident-alert";
+    const heading = document.createElement("div");
+    heading.className = "incident-alert-heading";
+    const rule = document.createElement("strong");
+    rule.textContent = `Règle ${alert.rule_id} · niveau ${alert.rule_level}/15`;
+    heading.append(rule);
+    const time = document.createElement("span");
+    time.className = "muted";
+    time.textContent = formatStatusTime(alert.timestamp);
+    heading.append(time);
+    const description = document.createElement("p");
+    description.textContent = alert.description || "Aucune description";
+    item.append(heading, description);
+    alertContainer.append(item);
+  }
+  if (!incident.alerts || incident.alerts.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "Aucune alerte associée.";
+    alertContainer.append(empty);
+  }
+
+  const feedbackList = document.querySelector("#detail-feedback");
+  feedbackList.replaceChildren();
+  for (const feedback of incident.feedback || []) {
+    const item = document.createElement("li");
+    item.textContent = feedback;
+    feedbackList.append(item);
+  }
+  document.querySelector("#empty-feedback").hidden = (incident.feedback || []).length > 0;
+}
+
+async function openIncidentDetails(incidentID) {
+  activeIncidentID = incidentID;
+  const dialog = document.querySelector("#incident-dialog");
+  document.querySelector("#incident-dialog-error").textContent = "";
+  document.querySelector("#incident-dialog-title").textContent = "Chargement…";
+  dialog.showModal();
+  try {
+    const incident = await api(`/api/incidents/${encodeURIComponent(incidentID)}`);
+    if (activeIncidentID === incidentID) setIncidentDetail(incident);
+  } catch (error) {
+    document.querySelector("#incident-dialog-error").textContent = error.message;
   }
 }
 
@@ -427,6 +513,32 @@ document.querySelector("#status-filter").addEventListener("change", refreshDashb
 document.querySelector("#severity-filter").addEventListener("change", refreshDashboard);
 document.querySelector("#level-filter").addEventListener("input", refreshDashboard);
 document.querySelector("#logout").addEventListener("click", disconnect);
+document.querySelector("#close-incident").addEventListener("click", () => {
+  document.querySelector("#incident-dialog").close();
+});
+document.querySelector("#incident-edit-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!activeIncidentID) return;
+  const saveButton = document.querySelector("#save-incident");
+  saveButton.disabled = true;
+  document.querySelector("#incident-dialog-error").textContent = "";
+  try {
+    const incident = await api(`/api/incidents/${encodeURIComponent(activeIncidentID)}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        status: document.querySelector("#incident-status").value,
+        feedback: document.querySelector("#incident-feedback").value.trim(),
+      }),
+    });
+    document.querySelector("#incident-feedback").value = "";
+    setIncidentDetail(incident);
+    await refreshDashboard();
+  } catch (error) {
+    document.querySelector("#incident-dialog-error").textContent = error.message;
+  } finally {
+    saveButton.disabled = false;
+  }
+});
 
 if (sessionStorage.getItem(tokenKey)) {
   refreshDashboard();

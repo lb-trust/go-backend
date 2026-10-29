@@ -440,6 +440,70 @@ func TestAPIListsAgentGroupsForExistingToken(t *testing.T) {
 	}
 }
 
+func TestIncidentDetailAndStatusUpdateAPI(t *testing.T) {
+	backend := testBackend(t, "")
+	_, _, err := backend.IngestAlert(context.Background(), "tenant-a",
+		alertPayload("incident-detail-event", highAlertLevel, "incident-detail-agent", "203.0.113.42"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	incidents, err := backend.ListIncidents(context.Background(), "tenant-a", "", 10)
+	if err != nil || len(incidents) != 1 {
+		t.Fatalf("incidents = %#v, error = %v", incidents, err)
+	}
+	incidentID := incidents[0].ID
+	server := httptest.NewServer(backend.Handler())
+	defer server.Close()
+	token := ""
+	for configuredToken, tenant := range backend.config.Tenants {
+		if tenant == "tenant-a" {
+			token = configuredToken
+			break
+		}
+	}
+
+	request, err := http.NewRequest(http.MethodGet,
+		server.URL+"/api/incidents/"+incidentID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var incident Incident
+	if err := json.NewDecoder(response.Body).Decode(&incident); err != nil {
+		response.Body.Close()
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(incident.Alerts) != 1 {
+		t.Fatalf("incident detail response = (%d, alerts=%d)", response.StatusCode, len(incident.Alerts))
+	}
+
+	request, err = http.NewRequest(http.MethodPatch,
+		server.URL+"/api/incidents/"+incidentID,
+		jsonBody(map[string]string{"status": "investigating", "feedback": "Pris en charge"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if err := json.NewDecoder(response.Body).Decode(&incident); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || incident.Status != "investigating" ||
+		len(incident.Feedback) != 1 || incident.Feedback[0] != "Pris en charge" {
+		t.Fatalf("incident update response = (%d, %#v)", response.StatusCode, incident)
+	}
+}
+
 func TestAPIRequiresTenantTokenAndReturnsTenantData(t *testing.T) {
 	backend := testBackend(t, "")
 	server := httptest.NewServer(backend.Handler())

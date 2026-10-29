@@ -127,6 +127,60 @@
         <p id="empty-incidents" class="empty" hidden>Aucun incident ne correspond à ces filtres.</p>
       </section>
 
+      <dialog id="incident-dialog" aria-labelledby="incident-dialog-title">
+        <div class="incident-dialog-header">
+          <div>
+            <p class="eyebrow">DÉTAIL DE L’INCIDENT</p>
+            <h2 id="incident-dialog-title">Incident</h2>
+          </div>
+          <button id="close-incident" type="button" class="secondary" aria-label="Fermer le détail">Fermer</button>
+        </div>
+        <p id="incident-dialog-error" class="message" role="status"></p>
+        <div class="incident-detail-grid">
+          <div><span class="detail-label">Sévérité</span><strong id="detail-severity"></strong></div>
+          <div><span class="detail-label">Statut actuel</span><strong id="detail-current-status"></strong></div>
+          <div><span class="detail-label">Agent</span><strong id="detail-agent"></strong></div>
+          <div><span class="detail-label">Groupes</span><strong id="detail-groups"></strong></div>
+          <div><span class="detail-label">IP de l’agent</span><strong id="detail-agent-ip"></strong></div>
+          <div><span class="detail-label">IP source</span><strong id="detail-source-ip"></strong></div>
+          <div><span class="detail-label">Niveau Wazuh</span><strong id="detail-level"></strong></div>
+          <div><span class="detail-label">Occurrences</span><strong id="detail-occurrences"></strong></div>
+          <div><span class="detail-label">Créé le</span><strong id="detail-created"></strong></div>
+          <div><span class="detail-label">Mis à jour le</span><strong id="detail-updated"></strong></div>
+        </div>
+
+        <section class="incident-detail-section">
+          <h3>Résumé de l’IA</h3>
+          <p id="detail-analysis" class="detail-text">Aucune analyse IA disponible pour cet incident.</p>
+        </section>
+
+        <section class="incident-detail-section">
+          <h3>Alertes associées</h3>
+          <div id="detail-alerts" class="incident-alerts"></div>
+        </section>
+
+        <section class="incident-detail-section">
+          <h3>Historique des commentaires</h3>
+          <ul id="detail-feedback" class="feedback-list"></ul>
+          <p id="empty-feedback" class="muted">Aucun commentaire ajouté.</p>
+        </section>
+
+        <form id="incident-edit-form" class="incident-edit-form">
+          <label for="incident-status">Statut</label>
+          <select id="incident-status" name="status" required>
+            <option value="open">Ouvert</option>
+            <option value="investigating">En cours</option>
+            <option value="resolved">Résolu</option>
+            <option value="false_positive">Faux positif</option>
+          </select>
+          <label for="incident-feedback">Ajouter un commentaire (facultatif)</label>
+          <textarea id="incident-feedback" name="feedback" rows="3" placeholder="Note de suivi, décision ou contexte…"></textarea>
+          <div class="incident-form-actions">
+            <button type="submit" id="save-incident">Enregistrer</button>
+          </div>
+        </form>
+      </dialog>
+
       <section class="panel">
         <div class="section-heading">
           <div>

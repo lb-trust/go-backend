@@ -149,6 +149,8 @@ ce sont des fichiers locaux d’exécution, pas des sources du projet.
 - Publication optionnelle des analyses automatiques qualifiées vers IRIS DFIR.
 - Dashboard intégré et page de maintenance Wazuh, sans dépendance JavaScript
   externe.
+- Détail d’incident accessible en cliquant sur sa ligne : alertes liées,
+  résumé IA, changement de statut et commentaires.
 
 ## Configuration
 
