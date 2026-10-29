@@ -46,7 +46,7 @@
       <section class="filters" aria-label="Filtres des incidents">
         <div class="client-picker">
           <span class="filter-label">Groupes client</span>
-          <details id="client-filter">
+          <details id="client-filter" class="filter-menu">
             <summary class="filter-picker">Chargement des groupes…</summary>
             <fieldset id="client-options" aria-label="Groupes client à afficher"></fieldset>
           </details>
@@ -85,8 +85,7 @@
           </span>
           <input id="level-filter" type="number" min="0" max="15" value="0">
         </label>
-        <button id="refresh" type="button" class="secondary">Actualiser</button>
-        <details class="column-picker">
+        <details class="column-picker filter-menu">
           <summary class="filter-picker">Colonnes</summary>
           <fieldset id="incident-columns" aria-label="Colonnes des incidents">
             <label><input type="checkbox" value="incident"> Incident</label>
@@ -102,6 +101,11 @@
             <label><input type="checkbox" value="ai"> IA</label>
           </fieldset>
         </details>
+        <button id="refresh" type="button" class="secondary refresh-button" aria-label="Actualiser" title="Actualiser">
+          <svg aria-hidden="true" focusable="false" viewBox="0 0 20 20">
+            <path d="M16.5 8A6.75 6.75 0 0 0 4.7 5.2L3 7m0 0V3.8M3 7h3.2M3.5 12A6.75 6.75 0 0 0 15.3 14.8L17 13m0 0v3.2M17 13h-3.2"/>
+          </svg>
+        </button>
       </section>
 
       <section class="panel">

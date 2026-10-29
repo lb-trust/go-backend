@@ -481,6 +481,9 @@ document.addEventListener("click", (event) => {
   for (const tip of document.querySelectorAll(".help-tip[open]")) {
     if (!tip.contains(event.target)) tip.open = false;
   }
+  for (const menu of document.querySelectorAll(".filter-menu[open]")) {
+    if (!menu.contains(event.target)) menu.open = false;
+  }
 });
 
 loginForm.addEventListener("submit", async (event) => {

@@ -65,19 +65,21 @@ input, select { border: 1px solid #d0d5dd; border-radius: 7px; color: #172033; m
 .filters label { min-width: 155px; }
 .filter-label { align-items: center; display: flex; gap: 6px; }
 .client-picker { display: grid; gap: 6px; min-width: 180px; }
-#client-filter { position: relative; }
+.filter-menu { position: relative; }
 .filter-picker { align-items: center; background: #fff; border: 1px solid #d0d5dd; border-radius: 7px; color: #172033; cursor: pointer; display: flex; font-size: .85rem; font-weight: 650; justify-content: space-between; list-style: none; min-height: 40px; padding: 8px 10px; }
 .filter-picker::after { border-bottom: 1.5px solid #667085; border-right: 1.5px solid #667085; content: ""; height: 7px; margin-left: 12px; transform: rotate(45deg) translateY(-2px); width: 7px; }
 .filter-picker::-webkit-details-marker { display: none; }
 .filter-picker:hover { border-color: #98a2b3; }
 .filter-picker:focus-visible { outline: 3px solid #155eef; outline-offset: 2px; }
-#client-options { background: #fff; border: 1px solid #d0d5dd; border-radius: 8px; box-shadow: 0 8px 20px #1018281a; display: grid; gap: 9px; margin: 8px 0 0; min-width: 220px; padding: 12px; position: absolute; z-index: 2; }
+#client-options, #incident-columns { background: #fff; border: 1px solid #d0d5dd; border-radius: 8px; box-shadow: 0 8px 20px #1018281a; display: grid; gap: 9px; margin: 8px 0 0; min-width: 220px; padding: 12px; position: absolute; z-index: 2; }
 #client-options label { align-items: center; display: flex; font-size: .82rem; font-weight: 500; gap: 8px; white-space: nowrap; }
 #client-options input { min-height: 0; }
-.column-picker { min-width: 155px; position: relative; }
-#incident-columns { background: #fff; border: 1px solid #d0d5dd; border-radius: 8px; box-shadow: 0 8px 20px #1018281a; display: grid; gap: 9px; margin: 8px 0 0; min-width: 220px; padding: 12px; position: absolute; right: 0; z-index: 1; }
+.column-picker { min-width: 155px; }
+.column-picker #incident-columns { right: 0; }
 #incident-columns label { align-items: center; display: flex; font-size: .82rem; font-weight: 500; gap: 8px; white-space: nowrap; }
 #incident-columns input { min-height: 0; }
+.refresh-button { align-items: center; display: inline-flex; height: 40px; justify-content: center; padding: 8px; width: 40px; }
+.refresh-button svg { fill: none; height: 20px; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; width: 20px; }
 .help-tip { display: inline-block; position: relative; vertical-align: middle; }
 .help-tip summary { align-items: center; border: 1px solid #98a2b3; border-radius: 50%; color: #475467; cursor: pointer; display: inline-flex; font-size: .7rem; font-weight: 750; height: 18px; justify-content: center; list-style: none; width: 18px; }
 .help-tip summary::-webkit-details-marker { display: none; }
