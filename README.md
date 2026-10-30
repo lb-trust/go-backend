@@ -78,9 +78,10 @@ automatique après redémarrage, fournissez les variables d’environnement au
 service ou au script qui démarre le backend.
 
 Après le démarrage du backend, ouvrez `http://127.0.0.1:8080/`. Au premier
-démarrage, le backend crée et affiche un jeton API pour `client-a`; entrez-le
-dans le dashboard.
-Le jeton est conservé dans `.soc-api-token`. Ne le partagez pas.
+démarrage, le backend crée un jeton API pour `client-a` et indique le chemin du
+fichier où il est conservé. Lisez ce fichier localement pour saisir le jeton
+dans le dashboard ; le secret n’est pas écrit dans les journaux. Ne le partagez
+pas.
 
 ### Vérifier la connexion et les alertes
 
