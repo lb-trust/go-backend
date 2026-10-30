@@ -27,6 +27,18 @@ function addCell(row, value) {
   return cell;
 }
 
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} o`;
+  const units = ["Kio", "Mio", "Gio", "Tio"];
+  let size = bytes;
+  let unitIndex = -1;
+  do {
+    size /= 1024;
+    unitIndex += 1;
+  } while (size >= 1024 && unitIndex < units.length - 1);
+  return `${size.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} ${units[unitIndex]}`;
+}
+
 async function refreshWazuhStatus() {
   if (!sessionStorage.getItem(tokenKey)) {
     document.querySelector("#wazuh-overall-state").textContent = "Connexion requise";
@@ -34,6 +46,8 @@ async function refreshWazuhStatus() {
       "Connectez-vous au dashboard avec votre jeton API, puis cliquez sur l’indicateur Wazuh.";
     body.replaceChildren();
     document.querySelector("#empty-wazuh-sources").hidden = true;
+    document.querySelector("#database-size").textContent = "Connexion requise.";
+    document.querySelector("#database-size-details").textContent = "";
     return;
   }
 
@@ -51,6 +65,12 @@ async function refreshWazuhStatus() {
       throw new Error("Session expirée : reconnectez-vous au dashboard.");
     }
     if (!response.ok) throw new Error(status.error || `Erreur HTTP ${response.status}`);
+
+    const database = status.database;
+    document.querySelector("#database-size").textContent =
+      `${formatBytes(database.total_bytes)} utilisés au total`;
+    document.querySelector("#database-size-details").textContent =
+      `Fichier DB : ${formatBytes(database.database_bytes)} · WAL : ${formatBytes(database.wal_bytes)} · SHM : ${formatBytes(database.shm_bytes)}`;
 
     body.replaceChildren();
     document.querySelector("#empty-wazuh-sources").hidden = status.sources.length !== 0;
@@ -99,6 +119,8 @@ async function refreshWazuhStatus() {
     document.querySelector("#wazuh-explanation").textContent =
       "La page n’a pas pu récupérer le statut auprès du backend.";
     errorMessage.textContent = error.message;
+    document.querySelector("#database-size").textContent = "Taille indisponible.";
+    document.querySelector("#database-size-details").textContent = "";
   } finally {
     refreshButton.disabled = false;
   }

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -97,6 +98,13 @@ type Incident struct {
 	Alerts      []Alert   `json:"alerts,omitempty"`
 }
 
+type DatabaseStorageStats struct {
+	DatabaseBytes int64 `json:"database_bytes"`
+	WALBytes      int64 `json:"wal_bytes"`
+	SHMBytes      int64 `json:"shm_bytes"`
+	TotalBytes    int64 `json:"total_bytes"`
+}
+
 func NewBackend(cfg Config) (*Backend, error) {
 	if len(cfg.Tenants) == 0 {
 		return nil, errors.New("au moins un tenant doit être configuré")
@@ -125,6 +133,41 @@ func NewBackend(cfg Config) (*Backend, error) {
 
 func (b *Backend) Close() error {
 	return b.db.Close()
+}
+
+func (b *Backend) DatabaseStorage() (DatabaseStorageStats, error) {
+	var stats DatabaseStorageStats
+	databaseBytes, err := fileSize(b.config.DatabasePath)
+	if err != nil {
+		return stats, fmt.Errorf("lire la taille du fichier SQLite: %w", err)
+	}
+	walBytes, err := fileSize(b.config.DatabasePath + "-wal")
+	if err != nil {
+		return stats, fmt.Errorf("lire la taille du journal SQLite: %w", err)
+	}
+	shmBytes, err := fileSize(b.config.DatabasePath + "-shm")
+	if err != nil {
+		return stats, fmt.Errorf("lire la taille du fichier SHM SQLite: %w", err)
+	}
+	stats.DatabaseBytes = databaseBytes
+	stats.WALBytes = walBytes
+	stats.SHMBytes = shmBytes
+	stats.TotalBytes = databaseBytes + walBytes + shmBytes
+	return stats, nil
+}
+
+func fileSize(path string) (int64, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	if !info.Mode().IsRegular() {
+		return 0, fmt.Errorf("%q n'est pas un fichier ordinaire", path)
+	}
+	return info.Size(), nil
 }
 
 func (b *Backend) WaitBackground() {
@@ -826,6 +869,45 @@ func (b *Backend) UpdateIncident(ctx context.Context, tenantID, id, status, feed
 		return Incident{}, fmt.Errorf("valider la mise à jour de l'incident: %w", err)
 	}
 	return b.GetIncident(ctx, tenantID, id)
+}
+
+func (b *Backend) DeleteIncident(ctx context.Context, tenantID, id string) error {
+	tx, err := b.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("démarrer la suppression de l'incident: %w", err)
+	}
+	defer tx.Rollback()
+
+	var jobStatus string
+	err = tx.QueryRowContext(ctx,
+		`SELECT j.status FROM incident_ai_jobs j
+		 JOIN incidents i ON i.id = j.incident_id
+		 WHERE i.tenant_id = ? AND i.id = ?`,
+		tenantID, id).Scan(&jobStatus)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("vérifier le traitement IA de l'incident: %w", err)
+	}
+	if jobStatus == "processing" {
+		return errAIJobInProgress
+	}
+
+	result, err := tx.ExecContext(ctx,
+		`DELETE FROM incidents WHERE tenant_id = ? AND id = ?`,
+		tenantID, id)
+	if err != nil {
+		return fmt.Errorf("supprimer l'incident: %w", err)
+	}
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("vérifier la suppression de l'incident: %w", err)
+	}
+	if deleted == 0 {
+		return sql.ErrNoRows
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("valider la suppression de l'incident: %w", err)
+	}
+	return nil
 }
 
 func (b *Backend) Dashboard(ctx context.Context, tenantID string) (map[string]any, error) {

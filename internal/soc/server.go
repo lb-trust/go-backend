@@ -32,6 +32,7 @@ func (b *Backend) Handler() http.Handler {
 	mux.Handle("GET /api/incidents", b.authenticate(http.HandlerFunc(b.listIncidentsHandler)))
 	mux.Handle("GET /api/incidents/{id}", b.authenticate(http.HandlerFunc(b.getIncidentHandler)))
 	mux.Handle("PATCH /api/incidents/{id}", b.authenticate(http.HandlerFunc(b.updateIncidentHandler)))
+	mux.Handle("DELETE /api/incidents/{id}", b.authenticate(http.HandlerFunc(b.deleteIncidentHandler)))
 	mux.Handle("POST /api/incidents/{id}/analyze", b.authenticate(http.HandlerFunc(b.analyzeIncidentHandler)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
@@ -134,9 +135,15 @@ func (b *Backend) listClientsHandler(w http.ResponseWriter, r *http.Request) {
 func (b *Backend) wazuhStatusHandler(w http.ResponseWriter, r *http.Request) {
 	tenantID := tenantFromContext(r.Context())
 	statuses := b.WazuhStatus(tenantID)
+	storage, err := b.DatabaseStorage()
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"configured": len(statuses) > 0,
 		"sources":    statuses,
+		"database":   storage,
 	})
 }
 
@@ -275,6 +282,23 @@ func (b *Backend) updateIncidentHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, incident)
+}
+
+func (b *Backend) deleteIncidentHandler(w http.ResponseWriter, r *http.Request) {
+	err := b.DeleteIncident(r.Context(), tenantFromContext(r.Context()), r.PathValue("id"))
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "incident introuvable")
+		return
+	}
+	if errors.Is(err, errAIJobInProgress) {
+		writeError(w, http.StatusConflict, "impossible de supprimer un incident pendant son analyse IA")
+		return
+	}
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (b *Backend) analyzeIncidentHandler(w http.ResponseWriter, r *http.Request) {

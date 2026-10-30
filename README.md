@@ -38,15 +38,25 @@ read -r -p "Utilisateur Indexer : " WAZUH_USER
 read -r -s -p "Mot de passe Indexer : " WAZUH_PASSWORD; printf '\n'
 export WAZUH_URL WAZUH_USER WAZUH_PASSWORD
 export WAZUH_SOURCES_JSON="$(python3 -c 'import json,os; print(json.dumps([{"tenant_id":"client-a","url":os.environ["WAZUH_URL"],"username":os.environ["WAZUH_USER"],"password":os.environ["WAZUH_PASSWORD"],"verify_tls":True,"alerts_index":"wazuh-alerts-*","batch_size":100}]))')"
-go run ./cmd/soc-backend
+chmod +x ./start.sh
+./start.sh
 ```
 
+Le script `start.sh` lance le backend avec `go run`. Il attend que Go soit
+disponible à `/usr/bin/go` et que le dépôt se trouve dans `/backend/go-backend`,
+chemin défini par sa commande `cd`. Si le dépôt se trouve ailleurs, modifiez
+cette ligne dans `start.sh` pour indiquer son chemin réel.
+
+Configurez Wazuh et les autres options en exportant leurs variables dans le
+même terminal **avant** de lancer `./start.sh` : le script les transmet au
+backend. Les variables de l’exemple ci-dessus ne durent que pendant la session
+du terminal. Pour un lancement permanent, définissez-les dans le service
+`systemd` qui lance le script ou dans son fichier d’environnement, lisible
+uniquement par l’utilisateur du service. N’inscrivez pas les mots de passe ni
+les clés dans `start.sh` ou dans le dépôt.
+
 Laissez le terminal ouvert : le backend collecte automatiquement les alertes
-toutes les 60 secondes. Les variables définies par `export` ne s’appliquent
-qu’à cette session shell. Pour un lancement permanent après redémarrage,
-définissez ces variables dans le service `systemd` qui lance le backend, ou
-utilisez un fichier d’environnement lisible uniquement par l’utilisateur du
-service. N’inscrivez pas le mot de passe dans le dépôt.
+toutes les 60 secondes.
 
 ### Windows (PowerShell)
 
@@ -81,7 +91,8 @@ maintenance. Elle donne, pour chaque source :
 - la date du dernier contrôle réussi ;
 - le nombre d’alertes lues lors de ce contrôle ;
 - l’heure de la dernière alerte Wazuh, si une alerte a été reçue ;
-- le message d’erreur, le cas échéant.
+- le message d’erreur, le cas échéant ;
+- l’espace utilisé par le fichier SQLite et ses fichiers WAL/SHM.
 
 « Aucune source Wazuh configurée » signifie que le processus backend n’a pas
 reçu de source pour le client lié au jeton. Vérifiez la variable
@@ -148,9 +159,10 @@ ce sont des fichiers locaux d’exécution, pas des sources du projet.
 - Analyse automatique ou manuelle avec Ollama.
 - Publication optionnelle des analyses automatiques qualifiées vers IRIS DFIR.
 - Dashboard intégré et page de maintenance Wazuh, sans dépendance JavaScript
-  externe.
+  externe ; la maintenance affiche aussi l’espace utilisé par SQLite, WAL et
+  SHM.
 - Détail d’incident accessible en cliquant sur sa ligne : alertes liées,
-  résumé IA, changement de statut et commentaires.
+  résumé IA, changement de statut, commentaires et suppression avec confirmation.
 
 ## Configuration
 
@@ -211,7 +223,7 @@ Elles renvoient uniquement les données du client associé au jeton.
 | `GET /health` | Santé du service, sans authentification. |
 | `GET /api/dashboard` | Compteurs et sévérités du client. |
 | `GET /api/clients` | Groupes Wazuh présents pour le client du jeton connecté. |
-| `GET /api/wazuh/status` | État des sources Wazuh du client, dernier contrôle, dernière alerte et erreurs éventuelles. |
+| `GET /api/wazuh/status` | État des sources Wazuh du client, erreurs éventuelles et taille des fichiers SQLite. |
 | `GET /api/control/ai` | État de la file IA et 100 derniers traitements. |
 | `PATCH /api/control/ai` | Pause/reprise globale, corps `{"enabled":false}` ou `{"enabled":true}`. |
 | `GET /api/alerts?limit=100&since=...` | Groupes d’alertes récents ; `since` est une date RFC3339. |
@@ -219,6 +231,7 @@ Elles renvoient uniquement les données du client associé au jeton.
 | `GET /api/incidents?status=open&limit=100` | Liste d’incidents ; statut facultatif. |
 | `GET /api/incidents/{id}` | Incident, alertes liées et feedback. |
 | `PATCH /api/incidents/{id}` | Modification de `status` et/ou ajout de `feedback`. |
+| `DELETE /api/incidents/{id}` | Supprimer l’incident, ses commentaires, son analyse et son traitement IA ; les alertes sources sont conservées. Refusé pendant une analyse en cours. |
 | `POST /api/incidents/{id}/analyze` | Analyse manuelle avec Ollama. |
 | `POST /api/incidents/{id}/queue` | Forcer une nouvelle analyse via la file persistante. |
 | `DELETE /api/incidents/{id}/queue` | Retirer de la file un traitement en attente ou en échec. |

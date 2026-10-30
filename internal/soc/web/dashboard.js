@@ -584,6 +584,32 @@ document.querySelector("#incident-edit-form").addEventListener("submit", async (
   }
 });
 
+document.querySelector("#delete-incident").addEventListener("click", async (event) => {
+  const incidentID = activeIncidentID;
+  if (!incidentID) return;
+  const title = document.querySelector("#incident-dialog-title").textContent;
+  if (!window.confirm(
+    `Supprimer définitivement l’incident « ${title} » ? Ses commentaires, son analyse et son traitement IA seront supprimés. Les alertes Wazuh sources seront conservées.`,
+  )) return;
+
+  const button = event.currentTarget;
+  button.disabled = true;
+  document.querySelector("#incident-dialog-error").textContent = "";
+  try {
+    await api(`/api/incidents/${encodeURIComponent(incidentID)}`, { method: "DELETE" });
+    incidentDialog.close();
+    activeIncidentID = "";
+    await refreshDashboard();
+    if (!pageMessage.textContent) {
+      pageMessage.textContent = "Incident supprimé. Les alertes Wazuh sources sont conservées.";
+    }
+  } catch (error) {
+    document.querySelector("#incident-dialog-error").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
 if (sessionStorage.getItem(tokenKey)) {
   refreshDashboard();
 }

@@ -61,6 +61,8 @@ input, select { border: 1px solid #d0d5dd; border-radius: 7px; color: #172033; m
 .muted { color: #667085; font-size: .85rem; }
 .secondary { background: #eef4ff; color: #1849a9; }
 .secondary:hover { background: #dbe8ff; }
+.danger-button { background: #fee4e2; color: #b42318; }
+.danger-button:hover { background: #fecdca; }
 .filters { flex-wrap: wrap; margin: 0 0 18px; }
 .filters > .client-picker, .filters > .filter-control, .filters > .column-picker-control { flex: 1 1 0; min-width: 155px; }
 .filters > .filter-control { gap: 6px; }
@@ -133,7 +135,7 @@ tr:last-child td { border-bottom: 0; }
 .incident-edit-form { border-top: 1px solid #eaecf0; display: grid; gap: 8px; margin-top: 20px; padding-top: 18px; }
 .incident-edit-form select { max-width: 300px; }
 .incident-edit-form textarea { border: 1px solid #d0d5dd; border-radius: 7px; color: #172033; font: inherit; padding: 10px; resize: vertical; }
-.incident-form-actions { display: flex; justify-content: flex-end; margin-top: 6px; }
+.incident-form-actions { display: flex; justify-content: space-between; margin-top: 6px; }
 footer { display: flex; justify-content: flex-end; }
 .link-button { background: transparent; color: #475467; padding: 8px; }
 .link-button:hover { background: #eaecf0; }

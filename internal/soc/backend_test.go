@@ -345,6 +345,106 @@ func TestRemoveQueuedIncidentAnalysis(t *testing.T) {
 	}
 }
 
+func TestDeleteIncidentAPIAndPreserveSourceAlerts(t *testing.T) {
+	backend := testBackend(t, "")
+	ctx := context.Background()
+	if _, _, err := backend.IngestAlert(ctx, "tenant-a",
+		alertPayload("delete-event", highAlertLevel, "delete-agent", "203.0.113.25")); err != nil {
+		t.Fatal(err)
+	}
+	incidents, err := backend.ListIncidents(ctx, "tenant-a", "", 10)
+	if err != nil || len(incidents) != 1 {
+		t.Fatalf("incidents = %#v, error = %v", incidents, err)
+	}
+	incidentID := incidents[0].ID
+	if err := backend.QueueIncidentAnalysis(ctx, "tenant-a", incidentID); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(backend.Handler())
+	defer server.Close()
+	deleteIncident := func(token string) *http.Response {
+		request, err := http.NewRequest(http.MethodDelete,
+			server.URL+"/api/incidents/"+incidentID, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("Authorization", "Bearer "+token)
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return response
+	}
+
+	response := deleteIncident("token-b")
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("cross-tenant delete status = %d, want %d", response.StatusCode, http.StatusNotFound)
+	}
+	if _, err := backend.db.Exec(`UPDATE incident_ai_jobs SET status = 'processing' WHERE incident_id = ?`,
+		incidentID); err != nil {
+		t.Fatal(err)
+	}
+	response = deleteIncident("token-a")
+	response.Body.Close()
+	if response.StatusCode != http.StatusConflict {
+		t.Fatalf("delete during AI processing status = %d, want %d", response.StatusCode, http.StatusConflict)
+	}
+	if _, err := backend.db.Exec(`UPDATE incident_ai_jobs SET status = 'pending' WHERE incident_id = ?`,
+		incidentID); err != nil {
+		t.Fatal(err)
+	}
+	response = deleteIncident("token-a")
+	response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete incident status = %d, want %d", response.StatusCode, http.StatusNoContent)
+	}
+	if _, err := backend.GetIncident(ctx, "tenant-a", incidentID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("deleted incident lookup error = %v, want sql.ErrNoRows", err)
+	}
+	for _, query := range []string{
+		`SELECT COUNT(*) FROM incident_ai_jobs WHERE incident_id = ?`,
+		`SELECT COUNT(*) FROM incident_alerts WHERE incident_id = ?`,
+	} {
+		var count int
+		if err := backend.db.QueryRow(query, incidentID).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("delete left %d incident records for query %q", count, query)
+		}
+	}
+	var alertCount int
+	if err := backend.db.QueryRow(`SELECT COUNT(*) FROM alert_groups WHERE tenant_id = ?`, "tenant-a").Scan(&alertCount); err != nil {
+		t.Fatal(err)
+	}
+	if alertCount != 1 {
+		t.Fatalf("source alerts remaining = %d, want 1", alertCount)
+	}
+}
+
+func TestWazuhStatusIncludesDatabaseStorage(t *testing.T) {
+	backend := testBackend(t, "")
+	request := httptest.NewRequest(http.MethodGet, "/api/wazuh/status", nil)
+	request.Header.Set("Authorization", "Bearer token-a")
+	response := httptest.NewRecorder()
+	backend.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("Wazuh status API = %d, want %d: %s", response.Code, http.StatusOK, response.Body.String())
+	}
+	var result struct {
+		Database DatabaseStorageStats `json:"database"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Database.DatabaseBytes <= 0 ||
+		result.Database.TotalBytes != result.Database.DatabaseBytes+result.Database.WALBytes+result.Database.SHMBytes {
+		t.Fatalf("database storage stats = %#v", result.Database)
+	}
+}
+
 func TestAPIListsAgentGroupsForExistingToken(t *testing.T) {
 	backend, err := NewBackend(Config{
 		DatabasePath: filepath.Join(t.TempDir(), "soc.db"),
