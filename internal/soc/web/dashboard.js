@@ -34,14 +34,22 @@ const incidentColumns = [
 ];
 const columnsKey = "soc-dashboard-incident-columns";
 const columnPicker = document.querySelector("#incident-columns");
+const columnSummary = document.querySelector("#columns-summary");
 const clientFilter = document.querySelector("#client-filter");
 const clientOptions = document.querySelector("#client-options");
 let visibleIncidentColumns = loadIncidentColumns();
 let latestIncidents = [];
 let latestAIEnabled = false;
+let latestQueuedIncidentIDs = new Set();
 let configuredGroups = null;
 let activeIncidentID = "";
 let refreshTimer;
+
+function updateColumnFilterSummary() {
+  const checkboxes = columnPicker.querySelectorAll("input");
+  const selected = columnPicker.querySelectorAll("input:checked");
+  columnSummary.textContent = selected.length === checkboxes.length ? "Toutes" : "Personnalisé";
+}
 
 function loadIncidentColumns() {
   const defaults = incidentColumns.filter((column) => column.default).map((column) => column.key);
@@ -62,9 +70,11 @@ for (const checkbox of columnPicker.querySelectorAll("input")) {
     visibleIncidentColumns = Array.from(columnPicker.querySelectorAll("input:checked"))
       .map((input) => input.value);
     localStorage.setItem(columnsKey, JSON.stringify(visibleIncidentColumns));
+    updateColumnFilterSummary();
     renderIncidents(latestIncidents, latestAIEnabled);
   });
 }
+updateColumnFilterSummary();
 
 function api(path, options = {}) {
   return fetch(path, {
@@ -255,9 +265,14 @@ function renderIncidents(incidents, enabled) {
 
   for (const incident of filtered) {
     const row = document.createElement("tr");
-    row.className = "incident-row";
+    const queued = latestQueuedIncidentIDs.has(incident.id);
+    row.className = queued ? "incident-row queued" : "incident-row";
     row.tabIndex = 0;
-    row.setAttribute("aria-label", `Ouvrir le détail de l’incident : ${incident.title}`);
+    row.setAttribute(
+      "aria-label",
+      `Ouvrir le détail de l’incident : ${incident.title}${queued ? " (analyse IA en attente ou en cours)" : ""}`,
+    );
+    if (queued) row.title = "Analyse IA en attente ou en cours";
     row.addEventListener("click", (event) => {
       if (!event.target.closest("button")) openIncidentDetails(incident.id);
     });
@@ -444,6 +459,11 @@ async function refreshDashboard() {
     ]);
     renderWazuhStatus(wazuhStatus);
     const queue = control.queue;
+    latestQueuedIncidentIDs = new Set(
+      queue
+        .filter((job) => job.status === "pending" || job.status === "processing")
+        .map((job) => job.incident_id),
+    );
     queue.sort((a, b) => {
       const priority = { processing: 0, pending: 1, failed: 2, done: 3 };
       return priority[a.status] - priority[b.status] ||
