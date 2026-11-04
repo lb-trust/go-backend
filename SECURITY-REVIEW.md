@@ -27,6 +27,13 @@ backend indique désormais dans ses journaux le chemin du fichier, pas le secret
 | 3 | 🟡 MEDIUM | `cmd/soc-backend/main.go` | 29-31 (corrigé) | Le jeton généré était écrit dans les journaux de démarrage, qui peuvent être accessibles ou centralisés. Le démarrage n’écrit désormais que le chemin du fichier du jeton. | 9/10 |
 | 4 | 🟡 MEDIUM | `internal/soc/config.go` | 106, 161-170 | La configuration permet une source Wazuh en HTTP ou avec la vérification TLS désactivée. Les identifiants Basic Auth et les alertes peuvent alors être interceptés ou modifiés. | 9/10 |
 
+Guides détaillés, un par constat :
+
+1. [Jeton API versionné dans Git](./docs/security/01-jeton-api-versionne.md)
+2. [HTTP sans chiffrement TLS](./docs/security/02-http-sans-tls.md)
+3. [Jeton API exposé dans les journaux — correction et suivi](./docs/security/03-jeton-dans-les-journaux.md)
+4. [Connexion Wazuh sans TLS strict](./docs/security/04-tls-wazuh-non-strict.md)
+
 ### Détails et remédiations
 
 #### 1. Jeton API versionné — HIGH

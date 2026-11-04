@@ -578,8 +578,10 @@ func TestIncidentDetailAndStatusUpdateAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	response.Body.Close()
-	if response.StatusCode != http.StatusOK || len(incident.Alerts) != 1 {
-		t.Fatalf("incident detail response = (%d, alerts=%d)", response.StatusCode, len(incident.Alerts))
+	if response.StatusCode != http.StatusOK || len(incident.Alerts) != 1 ||
+		incident.Alerts[0].Occurrences != 1 {
+		t.Fatalf("incident detail response = (%d, alerts=%d), want HTTP 200 and one alert with one occurrence",
+			response.StatusCode, len(incident.Alerts))
 	}
 
 	request, err = http.NewRequest(http.MethodPatch,

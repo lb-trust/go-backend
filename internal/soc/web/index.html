@@ -125,7 +125,7 @@
             <h2>Incidents
               <details class="help-tip">
                 <summary aria-label="À propos des occurrences et des durées">i</summary>
-                <span class="help-content" role="note">Les occurrences indiquent le nombre d’alertes reliées à l’incident, après regroupement. Les alertes de niveau inférieur à 10 sont regroupées sur 6 h ; à partir du niveau 10, sur 30 min. Les incidents ouverts ou en cours peuvent être corrélés pendant 30 min après leur dernière mise à jour.</span>
+                <span class="help-content" role="note">Les événements sont regroupés par règle et agent (ID, sinon nom ; si l’agent est inconnu, IP source). La fenêtre est de 6 h pour un niveau inférieur à 10, et de 30 min à partir du niveau 10. Un groupe rejoint un incident du même client encore ouvert ou en cours, mis à jour depuis moins de 30 min, si l’ID agent ou l’IP source correspond ; sinon un nouvel incident est créé. Le compteur de l’incident suit les événements reçus ; dans son détail, chaque alerte associée est un groupe et son compteur indique le nombre d’événements de ce groupe.</span>
               </details>
             </h2>
           </div>
@@ -171,7 +171,8 @@
         </section>
 
         <section class="incident-detail-section">
-          <h3>Alertes associées</h3>
+          <h3>Alertes associées <span id="detail-alert-count" class="muted"></span></h3>
+          <p class="muted">Double-cliquez sur une alerte pour ouvrir son détail complet.</p>
           <div id="detail-alerts" class="incident-alerts"></div>
         </section>
 
@@ -196,6 +197,31 @@
             <button type="submit" id="save-incident">Enregistrer</button>
           </div>
         </form>
+      </dialog>
+
+      <dialog id="alert-dialog" aria-labelledby="alert-dialog-title">
+        <div class="incident-dialog-header">
+          <div>
+            <p class="eyebrow">DÉTAIL DE L’ALERTE</p>
+            <h2 id="alert-dialog-title">Alerte</h2>
+          </div>
+          <button id="close-alert" type="button" class="secondary icon-button" aria-label="Fermer le détail de l’alerte" title="Fermer">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="incident-detail-grid">
+          <div><span class="detail-label">Occurrences</span><strong id="alert-detail-occurrences"></strong></div>
+          <div><span class="detail-label">Première occurrence</span><strong id="alert-detail-first-seen"></strong></div>
+          <div><span class="detail-label">Dernière occurrence</span><strong id="alert-detail-last-seen"></strong></div>
+          <div><span class="detail-label">Agent</span><strong id="alert-detail-agent"></strong></div>
+          <div><span class="detail-label">IP source</span><strong id="alert-detail-source"></strong></div>
+          <div><span class="detail-label">IP destination</span><strong id="alert-detail-destination"></strong></div>
+          <div><span class="detail-label">Emplacement</span><strong id="alert-detail-location"></strong></div>
+        </div>
+        <section class="incident-detail-section">
+          <h3>Événement Wazuh brut</h3>
+          <pre id="alert-detail-raw" class="alert-raw"></pre>
+        </section>
       </dialog>
 
       <section class="panel">

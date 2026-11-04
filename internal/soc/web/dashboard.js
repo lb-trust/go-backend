@@ -359,15 +359,33 @@ function setIncidentDetail(incident) {
   document.querySelector("#incident-status").value = incident.status;
 
   const alertContainer = document.querySelector("#detail-alerts");
+  const alerts = incident.alerts || [];
+  const totalOccurrences = alerts.reduce((total, alert) => total + (alert.occurrences || 0), 0);
+  document.querySelector("#detail-alert-count").textContent =
+    `(${alerts.length} groupes · ${totalOccurrences} ${totalOccurrences > 1 ? "occurrences" : "occurrence"})`;
   alertContainer.replaceChildren();
-  for (const alert of incident.alerts || []) {
+  for (const alert of alerts) {
     const item = document.createElement("article");
     item.className = "incident-alert";
+    item.tabIndex = 0;
+    item.setAttribute("role", "button");
+    item.setAttribute("aria-label", `Alerte, règle ${alert.rule_id}, ${alert.occurrences} ${alert.occurrences > 1 ? "occurrences" : "occurrence"}. Double-cliquez ou appuyez sur Entrée pour ouvrir le détail.`);
+    item.addEventListener("dblclick", () => openAlertDetails(alert));
+    item.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openAlertDetails(alert);
+      }
+    });
     const heading = document.createElement("div");
     heading.className = "incident-alert-heading";
     const rule = document.createElement("strong");
     rule.textContent = `Règle ${alert.rule_id} · niveau ${alert.rule_level}/15`;
     heading.append(rule);
+    const occurrences = document.createElement("span");
+    occurrences.className = "badge";
+    occurrences.textContent = `${alert.occurrences} ${alert.occurrences > 1 ? "occurrences" : "occurrence"}`;
+    heading.append(occurrences);
     const time = document.createElement("span");
     time.className = "muted";
     time.textContent = formatStatusTime(alert.timestamp);
@@ -392,6 +410,23 @@ function setIncidentDetail(incident) {
     feedbackList.append(item);
   }
   document.querySelector("#empty-feedback").hidden = (incident.feedback || []).length > 0;
+}
+
+function openAlertDetails(alert) {
+  document.querySelector("#alert-dialog-title").textContent =
+    `Règle ${alert.rule_id} · ${alert.description || "Aucune description"}`;
+  document.querySelector("#alert-detail-occurrences").textContent =
+    `${alert.occurrences} ${alert.occurrences > 1 ? "occurrences" : "occurrence"}`;
+  document.querySelector("#alert-detail-first-seen").textContent = formatStatusTime(alert.first_seen);
+  document.querySelector("#alert-detail-last-seen").textContent = formatStatusTime(alert.last_seen);
+  document.querySelector("#alert-detail-agent").textContent =
+    alert.agent_name || alert.agent_id || "—";
+  document.querySelector("#alert-detail-source").textContent = alert.source_ip || "—";
+  document.querySelector("#alert-detail-destination").textContent = alert.dest_ip || "—";
+  document.querySelector("#alert-detail-location").textContent = alert.location || "—";
+  document.querySelector("#alert-detail-raw").textContent =
+    JSON.stringify(alert.raw || {}, null, 2);
+  document.querySelector("#alert-dialog").showModal();
 }
 
 async function openIncidentDetails(incidentID) {
@@ -550,8 +585,15 @@ document.querySelector("#refresh").addEventListener("click", refreshDashboard);
 document.querySelector("#level-filter").addEventListener("input", refreshDashboard);
 document.querySelector("#logout").addEventListener("click", disconnect);
 const incidentDialog = document.querySelector("#incident-dialog");
+const alertDialog = document.querySelector("#alert-dialog");
 document.querySelector("#close-incident").addEventListener("click", () => {
   incidentDialog.close();
+});
+document.querySelector("#close-alert").addEventListener("click", () => {
+  alertDialog.close();
+});
+alertDialog.addEventListener("click", (event) => {
+  if (event.target === alertDialog) alertDialog.close();
 });
 incidentDialog.addEventListener("click", (event) => {
   if (event.target === incidentDialog) incidentDialog.close();

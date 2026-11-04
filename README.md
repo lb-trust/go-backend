@@ -214,6 +214,9 @@ Internet ; utilisez un reverse proxy HTTPS et un pare-feu pour les accès
 distants. Utilisez des comptes Wazuh en lecture seule et des secrets fournis
 par l’environnement ou un gestionnaire de secrets.
 
+Pour un exemple détaillé de déploiement avec Nginx et TLS sur Debian 13, voir
+[SECURISER-HTTP-DEBIAN-13.md](./SECURISER-HTTP-DEBIAN-13.md).
+
 ## API
 
 Les routes `/api/...` attendent l’en-tête `Authorization: Bearer <jeton>`.
