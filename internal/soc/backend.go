@@ -21,13 +21,14 @@ import (
 )
 
 const (
-	lowAlertWindow      = 6 * time.Hour
-	highAlertWindow     = 30 * time.Minute
-	incidentWindow      = 30 * time.Minute
-	lowAlertAIThreshold = 40
-	highAlertLevel      = 10
-	maxRequestBytes     = 1_000_000
-	databaseTimeLayout  = "2006-01-02T15:04:05.000000000Z"
+	lowAlertWindow            = 6 * time.Hour
+	highAlertWindow           = 30 * time.Minute
+	incidentWindow            = 30 * time.Minute
+	lowAlertIncidentThreshold = 10
+	lowAlertAIThreshold       = 40
+	highAlertLevel            = 10
+	maxRequestBytes           = 1_000_000
+	databaseTimeLayout        = "2006-01-02T15:04:05.000000000Z"
 )
 
 type invalidAlertError struct {
@@ -463,6 +464,12 @@ func (b *Backend) IngestAlert(ctx context.Context, tenantID string, raw map[stri
 	group, err := b.loadAlert(ctx, tx, tenantID, groupID)
 	if err != nil {
 		return Alert{}, false, err
+	}
+	if group.RuleLevel < highAlertLevel && group.Occurrences6h < lowAlertIncidentThreshold {
+		if err := tx.Commit(); err != nil {
+			return Alert{}, false, fmt.Errorf("valider l'ingestion de l'alerte faible: %w", err)
+		}
+		return group, true, nil
 	}
 	incidentID, err := b.correlateIncident(ctx, tx, group)
 	if err != nil {

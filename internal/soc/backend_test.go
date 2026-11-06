@@ -110,6 +110,42 @@ func TestIngestGroupsAlertsAndDeduplicatesWazuhIDs(t *testing.T) {
 	}
 }
 
+func TestLowLevelAlertsOnlyCreateIncidentAfterRepeatedOccurrences(t *testing.T) {
+	backend := testBackend(t, "")
+	ctx := context.Background()
+
+	for i := 1; i < lowAlertIncidentThreshold; i++ {
+		alert, inserted, err := backend.IngestAlert(ctx, "tenant-a",
+			alertPayload(fmt.Sprintf("low-level-%d", i), 4, "agent-low-level", ""))
+		if err != nil || !inserted {
+			t.Fatalf("ingest low-level alert %d: inserted=%v, error=%v", i, inserted, err)
+		}
+		if alert.Occurrences6h != i {
+			t.Fatalf("occurrences after alert %d = %d, want %d", i, alert.Occurrences6h, i)
+		}
+		incidents, err := backend.ListIncidents(ctx, "tenant-a", "", 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(incidents) != 0 {
+			t.Fatalf("incidents after %d low-level alerts = %d, want 0", i, len(incidents))
+		}
+	}
+
+	alert, inserted, err := backend.IngestAlert(ctx, "tenant-a",
+		alertPayload(fmt.Sprintf("low-level-%d", lowAlertIncidentThreshold), 4, "agent-low-level", ""))
+	if err != nil || !inserted {
+		t.Fatalf("ingest threshold alert: inserted=%v, error=%v", inserted, err)
+	}
+	if alert.Occurrences6h != lowAlertIncidentThreshold {
+		t.Fatalf("occurrences at threshold = %d, want %d", alert.Occurrences6h, lowAlertIncidentThreshold)
+	}
+	incidents, err := backend.ListIncidents(ctx, "tenant-a", "", 10)
+	if err != nil || len(incidents) != 1 {
+		t.Fatalf("incidents at threshold = %#v, error = %v", incidents, err)
+	}
+}
+
 func TestIncidentsExposeWazuhAgentMetadata(t *testing.T) {
 	backend := testBackend(t, "")
 	ctx := context.Background()
@@ -657,7 +693,8 @@ func TestAPIRequiresTenantTokenAndReturnsTenantData(t *testing.T) {
 	}
 	maintenanceAssetResponse.Body.Close()
 
-	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/alerts", jsonBody(alertPayload("evt", 5, "agent", "")))
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/alerts",
+		jsonBody(alertPayload("evt", highAlertLevel, "agent", "")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -671,7 +708,8 @@ func TestAPIRequiresTenantTokenAndReturnsTenantData(t *testing.T) {
 		t.Fatalf("unauthenticated status = %d, want %d", response.StatusCode, http.StatusUnauthorized)
 	}
 
-	request, err = http.NewRequest(http.MethodPost, server.URL+"/api/alerts", jsonBody(alertPayload("evt", 5, "agent", "")))
+	request, err = http.NewRequest(http.MethodPost, server.URL+"/api/alerts",
+		jsonBody(alertPayload("evt", highAlertLevel, "agent", "")))
 	if err != nil {
 		t.Fatal(err)
 	}

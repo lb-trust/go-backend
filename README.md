@@ -242,8 +242,10 @@ Elles renvoient uniquement les données du client associé au jeton.
 
 ## Traitement des alertes et de l’IA
 
-Les alertes de niveau Wazuh inférieur à 10 sont regroupées sur six heures ;
-à partir du niveau 10, sur 30 minutes. Les incidents ouverts ou en cours
+Les alertes de niveau Wazuh inférieur à 10 sont regroupées par règle et agent
+sur six heures, mais ne sont rattachées à un incident qu’à partir de 10
+occurrences dans ce groupe. À partir du niveau 10, elles sont rattachées
+immédiatement et regroupées sur 30 minutes. Les incidents ouverts ou en cours
 peuvent être corrélés pendant 30 minutes après leur dernière mise à jour.
 L’analyse automatique démarre après 40 occurrences d’alertes faibles ou
 immédiatement à partir du niveau Wazuh 10. Les tentatives échouées sont
