@@ -7,11 +7,53 @@ configuré, les analyses automatiques qualifiées sont publiées dans sa timelin
 
 Le projet est distribué sous licence GPL-3.0 : voir [LICENSE](./LICENSE).
 
-## Relier le backend à Wazuh
+## Premier démarrage et configuration graphique
+
+Lancez le service depuis la racine du dépôt :
+
+```bash
+go run ./cmd/soc-backend
+```
+
+Ouvrez `http://127.0.0.1:8080/` et connectez-vous avec le compte initial
+`admin` / `admin`. Depuis le menu **Configuration**, gérez les comptes ou
+ouvrez **Configuration Wazuh** pour saisir l’URL de l’Indexer, le compte en
+lecture seule et son mot de passe. Le service teste la connexion avant
+d’enregistrer les réglages dans SQLite ; la collecte démarre sans redémarrage.
+Si le certificat TLS de l’Indexer n’est pas reconnu, l’option **Ignorer les
+erreurs du certificat TLS** permet de tester la connexion, mais réduit sa
+sécurité. Préférez installer l’autorité de certification appropriée.
+Chaque champ de configuration Wazuh comporte une aide « i » avec des exemples
+et des commandes pour retrouver ou vérifier la valeur.
+Les groupes d’agents sont découverts à partir des alertes et affichés en ordre
+alphabétique dans les filtres du dashboard.
+
+L’interface configure une seule connexion Wazuh Indexer. Les groupes viennent
+des alertes de cette source : ils ne nécessitent pas de configuration séparée.
+
+Pour modifier un mot de passe, fournissez l’ancien, puis saisissez deux fois
+le nouveau (12 caractères minimum). La session web expire après 8 heures et est
+réinitialisée au redémarrage du service. La gestion disponible pour le moment
+concerne les comptes administrateurs.
+
+Les comptes et réglages restent dans `soc.db` (ou dans le chemin défini par
+`SOC_DB_PATH`). Utilisez le même répertoire de lancement ou définissez un chemin
+absolu pour retrouver la même base à chaque démarrage. Les mots de passe des
+comptes sont hachés ; les identifiants Wazuh sont enregistrés dans la base
+locale. Protégez ce fichier et l’accès au compte système du service. Le compte initial
+`admin:admin` est volontairement conservé : changez son mot de passe dès que
+possible depuis **Gestion des comptes**.
+
+La connexion par jeton API reste disponible pour les intégrations et
+l’ingestion d’alertes ; elle n’est plus nécessaire pour ouvrir le dashboard.
+
+## Configuration manuelle (optionnelle)
 
 Le backend interroge **Wazuh Indexer** en lecture seule. Il doit pouvoir joindre
 son URL et utiliser un compte ayant accès en lecture à l’index d’alertes. Il ne
-se connecte pas directement à l’agent ni au manager Wazuh.
+se connecte pas directement à l’agent ni au manager Wazuh. Cette méthode par
+variables d’environnement est une alternative au formulaire graphique ; une
+configuration déjà enregistrée dans SQLite reste prioritaire au redémarrage.
 
 ### Debian (recommandé)
 
@@ -77,11 +119,10 @@ par défaut. Gardez cette fenêtre ouverte : la configuration définie avec
 automatique après redémarrage, fournissez les variables d’environnement au
 service ou au script qui démarre le backend.
 
-Après le démarrage du backend, ouvrez `http://127.0.0.1:8080/`. Au premier
-démarrage, le backend crée un jeton API pour `client-a` et indique le chemin du
-fichier où il est conservé. Lisez ce fichier localement pour saisir le jeton
-dans le dashboard ; le secret n’est pas écrit dans les journaux. Ne le partagez
-pas.
+Après le démarrage, ouvrez `http://127.0.0.1:8080/` et utilisez le compte
+administrateur. Le jeton API généré reste réservé aux intégrations ; son chemin
+est indiqué dans les journaux et sa valeur est conservée dans le fichier local
+configuré par `SOC_API_TOKEN_FILE`.
 
 ### Vérifier la connexion et les alertes
 
@@ -95,10 +136,10 @@ maintenance. Elle donne, pour chaque source :
 - le message d’erreur, le cas échéant ;
 - l’espace utilisé par le fichier SQLite et ses fichiers WAL/SHM.
 
-« Aucune source Wazuh configurée » signifie que le processus backend n’a pas
-reçu de source pour le client lié au jeton. Vérifiez la variable
-`WAZUH_SOURCES_JSON` dans le terminal ou le service qui **lance** le backend,
-puis redémarrez-le après correction.
+« Aucune source Wazuh configurée » signifie qu’aucune connexion n’a été
+enregistrée. Ouvrez **Configuration > Configuration Wazuh** pour renseigner ou
+corriger les paramètres ; la modification est testée et appliquée sans
+redémarrage.
 
 « Connexion OK, aucune alerte récente » signifie que l’Indexer répond, mais
 qu’aucune nouvelle alerte n’a été lue récemment. Une source configurée mais en
@@ -119,6 +160,7 @@ go-backend/
 │       └── main.go              # Démarrage serveur, collecteurs et worker IA
 ├── internal/
 │   └── soc/
+│       ├── auth.go               # Comptes, sessions et configuration Wazuh
 │       ├── backend.go           # SQLite, ingestion, regroupement, incidents
 │       ├── backend_test.go      # Tests backend, API et collecte Wazuh
 │       ├── clients.go           # Clients Ollama, Wazuh et IRIS
@@ -132,7 +174,10 @@ go-backend/
 │           ├── dashboard.js     # Dashboard, filtres et indicateur Wazuh
 │           ├── index.html       # Page principale SOC
 │           ├── maintenance.html # Diagnostic de la collecte Wazuh
-│           └── maintenance.js  # Affichage du diagnostic Wazuh
+│           ├── maintenance.js  # Affichage du diagnostic Wazuh
+│           ├── accounts.html   # Gestion des comptes administrateurs
+│           ├── settings.html   # Configuration graphique Wazuh
+│           └── admin.js        # Interactions des pages d’administration
 ├── other/
 │   └── alert.json              # Exemple d’alerte Wazuh (groupe ClientB)
 ├── LICENSE
@@ -147,8 +192,11 @@ ce sont des fichiers locaux d’exécution, pas des sources du projet.
 
 ## Fonctionnalités
 
-- API HTTP JSON authentifiée par jeton ; les données sont isolées par client
-  (`tenant_id`).
+- Dashboard avec comptes administrateurs persistés dans SQLite et API HTTP JSON
+  authentifiée par jeton pour les intégrations ; les données sont isolées par
+  client (`tenant_id`).
+- Configuration Wazuh testée et enregistrée depuis l’interface ; les filtres de
+  groupes du dashboard sont découverts automatiquement.
 - Collecte périodique optionnelle du Wazuh Indexer en lecture seule et
   ingestion manuelle d’alertes.
 - Déduplication des identifiants Wazuh, regroupement par client, règle et
@@ -169,7 +217,7 @@ ce sont des fichiers locaux d’exécution, pas des sources du projet.
 
 | Variable | Défaut | Description |
 | --- | --- | --- |
-| `WAZUH_SOURCES_JSON` | `[]` | Tableau JSON des sources Wazuh Indexer. Voir l’exemple de démarrage ci-dessus. |
+| `WAZUH_SOURCES_JSON` | `[]` | Configuration de démarrage par environnement, utilisée si SQLite ne contient pas déjà de paramètres Wazuh. |
 | `WAZUH_POLL_SECONDS` | `60` | Période entre les contrôles ; minimum 15 secondes. |
 | `SOC_TENANTS_JSON` | client `client-a` généré | Objet JSON `jeton: tenant_id` pour configurer explicitement les clients et jetons. |
 | `SOC_API_TOKEN_FILE` | `.soc-api-token` | Fichier local contenant le jeton généré automatiquement. |
@@ -181,7 +229,8 @@ ce sont des fichiers locaux d’exécution, pas des sources du projet.
 | `IRIS_API_KEY` | désactivé | Clé API IRIS. |
 | `IRIS_CASE_ID` | désactivé | Identifiant numérique du cas IRIS cible. |
 
-Une entrée `WAZUH_SOURCES_JSON` contient :
+Pour les déploiements qui utilisent encore `WAZUH_SOURCES_JSON`, chaque entrée
+contient :
 
 | Champ | Obligatoire | Signification |
 | --- | --- | --- |
@@ -192,10 +241,10 @@ Une entrée `WAZUH_SOURCES_JSON` contient :
 | `alerts_index` | non | Index à lire ; `wazuh-alerts-*` par défaut. |
 | `batch_size` | non | Nombre maximal de résultats par contrôle ; `100` par défaut, maximum `1000`. |
 
-Pour plusieurs clients, configurez leurs jetons dans `SOC_TENANTS_JSON`, puis
-associez chaque source Wazuh au bon `tenant_id`. Les labels Wazuh tels que
-`ClientA` ou `ClientB` servent au filtre des groupes dans l’interface ; ils ne
-remplacent pas le `tenant_id`.
+`tenant_id` est un paramètre interne de l’ancienne configuration par
+environnement ; il n’est pas demandé dans l’interface graphique. Dans le
+dashboard, les groupes tels que `ClientA` et `ClientB` proviennent des labels
+Wazuh et sont filtrables indépendamment.
 
 IRIS est désactivé par défaut. Pour l’activer, fournissez ensemble
 `IRIS_BASE_URL`, `IRIS_API_KEY` et `IRIS_CASE_ID`. Ne mettez jamais de mot de
@@ -211,20 +260,34 @@ confiance nécessaire.
 
 Le serveur utilise HTTP sans chiffrement. Ne l’exposez pas directement à
 Internet ; utilisez un reverse proxy HTTPS et un pare-feu pour les accès
-distants. Utilisez des comptes Wazuh en lecture seule et des secrets fournis
-par l’environnement ou un gestionnaire de secrets.
+distants. Utilisez un compte Wazuh en lecture seule. Son mot de passe est
+conservé sans chiffrement dans SQLite : limitez l’accès au fichier et protégez
+ses sauvegardes. Pour IRIS, gardez la clé API dans l’environnement ou un
+gestionnaire de secrets, jamais dans le dépôt.
 
 Pour un exemple détaillé de déploiement avec Nginx et TLS sur Debian 13, voir
 [SECURISER-HTTP-DEBIAN-13.md](./SECURISER-HTTP-DEBIAN-13.md).
 
 ## API
 
-Les routes `/api/...` attendent l’en-tête `Authorization: Bearer <jeton>`.
-Elles renvoient uniquement les données du client associé au jeton.
+Les intégrations continuent d’utiliser
+`Authorization: Bearer <jeton API>`. Le dashboard utilise un jeton de session
+obtenu à la connexion, conservé en mémoire par le serveur et invalidé à son
+redémarrage. Les routes `/api/admin/...` sont réservées aux sessions admin.
 
 | Méthode et route | Usage |
 | --- | --- |
 | `GET /health` | Santé du service, sans authentification. |
+| `POST /api/auth/login` | Connexion par identifiant et mot de passe ; retourne une session. |
+| `POST /api/auth/logout` | Révoquer la session courante. |
+| `GET /api/auth/me` | Compte associé à la session. |
+| `GET /api/admin/accounts` | Lister les comptes administrateurs. |
+| `POST /api/admin/accounts` | Créer un compte administrateur. |
+| `DELETE /api/admin/accounts/{username}` | Supprimer un autre compte administrateur ; le dernier compte ne peut pas être supprimé. |
+| `PATCH /api/admin/password` | Modifier son mot de passe avec l’ancien et deux saisies identiques du nouveau. |
+| `GET /api/admin/wazuh` | Lire les paramètres Wazuh sans divulguer le mot de passe. |
+| `PUT /api/admin/wazuh` | Tester et enregistrer la connexion Wazuh. |
+| `DELETE /api/admin/wazuh` | Supprimer la configuration Wazuh. |
 | `GET /api/dashboard` | Compteurs et sévérités du client. |
 | `GET /api/clients` | Groupes Wazuh présents pour le client du jeton connecté. |
 | `GET /api/wazuh/status` | État des sources Wazuh du client, erreurs éventuelles et taille des fichiers SQLite. |

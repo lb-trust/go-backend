@@ -19,15 +19,25 @@
         <a class="wazuh-status" id="wazuh-state" href="/maintenance" aria-label="Ouvrir la page de maintenance Wazuh">
           Wazuh : vérification…
         </a>
+        <details class="account-menu" id="account-menu" hidden>
+          <summary>Configuration</summary>
+          <nav aria-label="Menu de configuration">
+            <a href="/accounts">Gestion des comptes</a>
+            <a href="/settings">Configuration Wazuh</a>
+            <button id="logout" type="button" class="link-button">Se déconnecter</button>
+          </nav>
+        </details>
       </div>
     </header>
 
     <section class="panel login-panel" id="login-panel">
-      <h2>Connexion au backend</h2>
-      <p>Saisissez le jeton API affiché dans les journaux au démarrage du serveur.</p>
+      <h2>Connexion</h2>
+      <p>Connectez-vous avec un compte administrateur.</p>
       <form id="login-form" class="login-form">
-        <label for="token">Jeton API</label>
-        <input id="token" name="token" type="password" autocomplete="current-password" required>
+        <label for="username">Identifiant</label>
+        <input id="username" name="username" autocomplete="username" required>
+        <label for="password">Mot de passe</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
         <button type="submit">Se connecter</button>
       </form>
       <p class="message" id="login-error" role="status"></p>
@@ -255,7 +265,6 @@
         </div>
         <p id="empty-queue" class="empty" hidden>La file est vide.</p>
       </section>
-      <footer><button id="logout" type="button" class="link-button">Se déconnecter</button></footer>
     </div>
   </main>
   <script src="/assets/dashboard.js" defer></script>

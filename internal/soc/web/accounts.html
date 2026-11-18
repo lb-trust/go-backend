@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Comptes — Console SOC</title>
+  <link rel="stylesheet" href="/assets/dashboard.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">TRUSTINFO SOC</p>
+        <h1>Gestion des comptes</h1>
+      </div>
+      <nav class="maintenance-actions" aria-label="Navigation">
+        <a class="secondary maintenance-back" href="/">Retour au dashboard</a>
+        <a class="secondary maintenance-back" href="/settings">Configuration</a>
+      </nav>
+    </header>
+
+    <section class="panel">
+      <h2>Comptes administrateurs</h2>
+      <p class="muted">Les comptes standards pourront être ajoutés ultérieurement.</p>
+      <p id="accounts-error" class="message" role="status"></p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Identifiant</th><th>Rôle</th><th>Action</th></tr></thead>
+          <tbody id="accounts-list"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Créer un compte administrateur</h2>
+      <form id="create-account-form" class="admin-form">
+        <label for="new-username">Identifiant</label>
+        <input id="new-username" autocomplete="off" required minlength="3" maxlength="64">
+        <label for="new-password">Mot de passe (12 caractères minimum)</label>
+        <input id="new-password" type="password" autocomplete="new-password" required minlength="12">
+        <label for="confirm-new-password">Confirmer le mot de passe</label>
+        <input id="confirm-new-password" type="password" autocomplete="new-password" required minlength="12">
+        <p id="create-password-mismatch" class="message" role="status" aria-live="polite"></p>
+        <button type="submit">Créer le compte</button>
+      </form>
+      <p id="create-account-message" class="message" role="status"></p>
+    </section>
+
+    <section class="panel">
+      <h2>Modifier mon mot de passe</h2>
+      <form id="change-password-form" class="admin-form">
+        <label for="current-account-password">Ancien mot de passe</label>
+        <input id="current-account-password" type="password" autocomplete="current-password" required>
+        <label for="new-account-password">Nouveau mot de passe (12 caractères minimum)</label>
+        <input id="new-account-password" type="password" autocomplete="new-password" required minlength="12">
+        <label for="confirm-account-password">Confirmer le nouveau mot de passe</label>
+        <input id="confirm-account-password" type="password" autocomplete="new-password" required minlength="12">
+        <p id="change-password-mismatch" class="message" role="status" aria-live="polite"></p>
+        <button type="submit">Modifier mon mot de passe</button>
+      </form>
+      <p id="password-message" class="message" role="status"></p>
+    </section>
+  </main>
+  <script src="/assets/admin.js" defer></script>
+</body>
+</html>

@@ -46,12 +46,18 @@ func (e *invalidAlertError) Unwrap() error {
 var errInvalidIncidentStatus = errors.New("status doit être open, investigating, resolved ou false_positive")
 
 type Backend struct {
-	config        Config
-	db            *sql.DB
-	httpClient    *http.Client
-	workers       sync.WaitGroup
-	wazuhStatusMu sync.RWMutex
-	wazuhStatuses map[string]WazuhSourceStatus
+	config           Config
+	db               *sql.DB
+	httpClient       *http.Client
+	workers          sync.WaitGroup
+	wazuhStatusMu    sync.RWMutex
+	wazuhStatuses    map[string]WazuhSourceStatus
+	wazuhConfigMu    sync.RWMutex
+	collectorMu      sync.Mutex
+	collectorStarted bool
+	collectorUpdates chan []WazuhSource
+	sessionMu        sync.Mutex
+	sessions         map[string]adminSession
 }
 
 type Alert struct {
@@ -116,10 +122,12 @@ func NewBackend(cfg Config) (*Backend, error) {
 	}
 	db.SetMaxOpenConns(1)
 	backend := &Backend{
-		config:        cfg,
-		db:            db,
-		httpClient:    newHTTPClient(),
-		wazuhStatuses: make(map[string]WazuhSourceStatus),
+		config:           cfg,
+		db:               db,
+		httpClient:       newHTTPClient(),
+		wazuhStatuses:    make(map[string]WazuhSourceStatus),
+		collectorUpdates: make(chan []WazuhSource, 1),
+		sessions:         make(map[string]adminSession),
 	}
 	if _, err := db.Exec(`PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;`); err != nil {
 		db.Close()
@@ -294,6 +302,12 @@ CREATE TABLE IF NOT EXISTS soc_settings (
 	if _, err := b.db.ExecContext(ctx,
 		`UPDATE incident_ai_jobs SET status = 'pending' WHERE status = 'processing'`); err != nil {
 		return fmt.Errorf("récupérer les analyses interrompues: %w", err)
+	}
+	if err := b.initializeAccounts(ctx); err != nil {
+		return err
+	}
+	if err := b.initializeWazuhConfiguration(ctx); err != nil {
+		return err
 	}
 	return nil
 }
@@ -959,6 +973,12 @@ func (b *Backend) TenantForToken(token string) (string, bool) {
 		}
 	}
 	return matchedTenant, matched == 1
+}
+
+func (b *Backend) wazuhSources() []WazuhSource {
+	b.wazuhConfigMu.RLock()
+	defer b.wazuhConfigMu.RUnlock()
+	return append([]WazuhSource(nil), b.config.WazuhSources...)
 }
 
 func intValue(value any) int {

@@ -10,16 +10,27 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 )
 
 func (b *Backend) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /", dashboardHandler())
+	mux.Handle("GET /accounts", dashboardHandler())
+	mux.Handle("GET /settings", dashboardHandler())
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	mux.HandleFunc("POST /api/auth/login", b.loginHandler)
+	mux.HandleFunc("POST /api/auth/logout", b.logoutHandler)
+	mux.Handle("GET /api/auth/me", b.authenticate(http.HandlerFunc(b.currentAccountHandler)))
+	mux.Handle("GET /api/admin/accounts", b.authenticateAdminRequest(http.HandlerFunc(b.accountsHandler)))
+	mux.Handle("POST /api/admin/accounts", b.authenticateAdminRequest(http.HandlerFunc(b.accountsHandler)))
+	mux.Handle("DELETE /api/admin/accounts/{username}", b.authenticateAdminRequest(http.HandlerFunc(b.deleteAccountHandler)))
+	mux.Handle("PATCH /api/admin/password", b.authenticateAdminRequest(http.HandlerFunc(b.changePasswordHandler)))
+	mux.Handle("GET /api/admin/wazuh", b.authenticateAdminRequest(http.HandlerFunc(b.wazuhConfigurationHandler)))
+	mux.Handle("PUT /api/admin/wazuh", b.authenticateAdminRequest(http.HandlerFunc(b.wazuhConfigurationHandler)))
+	mux.Handle("DELETE /api/admin/wazuh", b.authenticateAdminRequest(http.HandlerFunc(b.clearWazuhConfigurationHandler)))
 	mux.Handle("GET /api/dashboard", b.authenticate(http.HandlerFunc(b.dashboardHandler)))
 	mux.Handle("GET /api/control/ai", b.authenticate(http.HandlerFunc(b.aiControlHandler)))
 	mux.Handle("GET /api/wazuh/status", b.authenticate(http.HandlerFunc(b.wazuhStatusHandler)))
@@ -149,8 +160,13 @@ func (b *Backend) wazuhStatusHandler(w http.ResponseWriter, r *http.Request) {
 
 func (b *Backend) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := strings.TrimSpace(r.Header.Get("Authorization"))
-		token = strings.TrimPrefix(token, "Bearer ")
+		token := bearerToken(r)
+		if session, ok := b.sessionForToken(token); ok {
+			ctx := context.WithValue(r.Context(), tenantContextKey{}, session.TenantID)
+			ctx = setAdminIdentity(ctx, session.Username, session.Role)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
 		tenantID, ok := b.TenantForToken(token)
 		if !ok {
 			writeError(w, http.StatusUnauthorized, "jeton API invalide")

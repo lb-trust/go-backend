@@ -1,10 +1,10 @@
 "use strict";
 
-const tokenKey = "soc-api-token";
+const tokenKey = "soc-admin-session";
 const loginPanel = document.querySelector("#login-panel");
 const dashboard = document.querySelector("#dashboard");
 const loginForm = document.querySelector("#login-form");
-const tokenInput = document.querySelector("#token");
+const accountMenu = document.querySelector("#account-menu");
 const connectionState = document.querySelector("#connection-state");
 const pageMessage = document.querySelector("#page-message");
 const statusLabels = {
@@ -87,7 +87,7 @@ function api(path, options = {}) {
   }).then(async (response) => {
     if (response.status === 401) {
       disconnect();
-      throw new Error("Session expirée : reconnectez-vous avec votre jeton API.");
+      throw new Error("Session expirée : reconnectez-vous avec votre compte.");
     }
     if (response.status === 204) return null;
     const data = await response.json();
@@ -100,6 +100,8 @@ function setConnected(connected) {
   const wasConnected = !dashboard.hidden;
   loginPanel.hidden = connected;
   dashboard.hidden = !connected;
+  accountMenu.hidden = !connected;
+  if (!connected) accountMenu.open = false;
   connectionState.textContent = connected ? "Connecté" : "Déconnecté";
   connectionState.classList.toggle("online", connected);
   if (wasConnected === connected) return;
@@ -122,7 +124,7 @@ function renderWazuhStatus(status) {
     return;
   }
   const lines = status.sources.map((source) => {
-    const label = `${source.tenant_id} · ${source.alerts_index}`;
+    const label = source.alerts_index;
     if (source.state === "unknown") {
       return `${label} : en attente du premier contrôle`;
     }
@@ -190,7 +192,7 @@ for (const filterID of ["status-filter", "severity-filter"]) {
 }
 
 function initializeClientFilter(groups) {
-  configuredGroups = groups;
+  configuredGroups = [...groups].sort((a, b) => a.localeCompare(b, "fr", { sensitivity: "base" }));
   const allLabel = document.createElement("label");
   const allCheckbox = document.createElement("input");
   allCheckbox.type = "checkbox";
@@ -554,15 +556,30 @@ document.addEventListener("click", (event) => {
   for (const menu of document.querySelectorAll(".filter-menu[open]")) {
     if (!menu.contains(event.target)) menu.open = false;
   }
+  if (!accountMenu.contains(event.target)) accountMenu.open = false;
 });
 
 loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const token = tokenInput.value.trim();
-  if (!token) return;
-  sessionStorage.setItem(tokenKey, token);
-  await refreshDashboard();
-  if (sessionStorage.getItem(tokenKey)) tokenInput.value = "";
+  const errorMessage = document.querySelector("#login-error");
+  errorMessage.textContent = "";
+  try {
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: document.querySelector("#username").value.trim(),
+        password: document.querySelector("#password").value,
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `Erreur HTTP ${response.status}`);
+    sessionStorage.setItem(tokenKey, result.token);
+    document.querySelector("#password").value = "";
+    await refreshDashboard();
+  } catch (error) {
+    errorMessage.textContent = error.message;
+  }
 });
 
 document.querySelector("#toggle-ai").addEventListener("click", async (event) => {
@@ -583,7 +600,21 @@ document.querySelector("#toggle-ai").addEventListener("click", async (event) => 
 
 document.querySelector("#refresh").addEventListener("click", refreshDashboard);
 document.querySelector("#level-filter").addEventListener("input", refreshDashboard);
-document.querySelector("#logout").addEventListener("click", disconnect);
+document.querySelector("#logout").addEventListener("click", async () => {
+  const token = sessionStorage.getItem(tokenKey);
+  try {
+    if (token) {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    }
+  } catch (error) {
+    console.error("Impossible de révoquer la session côté serveur :", error);
+  } finally {
+    disconnect();
+  }
+});
 const incidentDialog = document.querySelector("#incident-dialog");
 const alertDialog = document.querySelector("#alert-dialog");
 document.querySelector("#close-incident").addEventListener("click", () => {

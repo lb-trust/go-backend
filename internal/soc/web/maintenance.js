@@ -1,6 +1,6 @@
 "use strict";
 
-const tokenKey = "soc-api-token";
+const tokenKey = "soc-admin-session";
 const body = document.querySelector("#wazuh-sources");
 const errorMessage = document.querySelector("#wazuh-error");
 
@@ -43,7 +43,7 @@ async function refreshWazuhStatus() {
   if (!sessionStorage.getItem(tokenKey)) {
     document.querySelector("#wazuh-overall-state").textContent = "Connexion requise";
     document.querySelector("#wazuh-explanation").textContent =
-      "Connectez-vous au dashboard avec votre jeton API, puis cliquez sur l’indicateur Wazuh.";
+      "Connectez-vous au dashboard avec un compte administrateur, puis cliquez sur l’indicateur Wazuh.";
     body.replaceChildren();
     document.querySelector("#empty-wazuh-sources").hidden = true;
     document.querySelector("#database-size").textContent = "Connexion requise.";
@@ -102,7 +102,7 @@ async function refreshWazuhStatus() {
 
     for (const source of status.sources) {
       const row = document.createElement("tr");
-      const sourceName = `${source.tenant_id} · ${source.alerts_index}`;
+      const sourceName = source.alerts_index;
       const sourceCell = addCell(row, sourceName);
       sourceCell.title = sourceName;
       const stateCell = addCell(row, stateLabel(source.state));

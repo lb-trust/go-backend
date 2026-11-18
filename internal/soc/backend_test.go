@@ -933,6 +933,318 @@ func TestWazuhPollStatusReportsConnectionFailure(t *testing.T) {
 	}
 }
 
+func TestAdminLoginAndAccountManagement(t *testing.T) {
+	backend := testBackend(t, "")
+	server := httptest.NewServer(backend.Handler())
+	defer server.Close()
+
+	response, err := http.Post(server.URL+"/api/auth/login", "application/json",
+		jsonBody(map[string]string{"username": "admin", "password": "wrong"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("invalid admin login = %d, want %d", response.StatusCode, http.StatusUnauthorized)
+	}
+
+	response, err = http.Post(server.URL+"/api/auth/login", "application/json",
+		jsonBody(map[string]string{"username": "admin", "password": "admin"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var login struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&login); err != nil {
+		response.Body.Close()
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || login.Token == "" {
+		t.Fatalf("admin login = (%d, token present %t)", response.StatusCode, login.Token != "")
+	}
+
+	changePasswordStatus := func(currentPassword, newPassword, confirmation string) int {
+		t.Helper()
+		request, err := http.NewRequest(http.MethodPatch, server.URL+"/api/admin/password",
+			jsonBody(map[string]string{
+				"current_password":     currentPassword,
+				"new_password":         newPassword,
+				"confirm_new_password": confirmation,
+			}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("Authorization", "Bearer "+login.Token)
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		return response.StatusCode
+	}
+	if status := changePasswordStatus("wrong", "new-strong-password", "new-strong-password"); status != http.StatusForbidden {
+		t.Fatalf("wrong current password status = %d, want %d", status, http.StatusForbidden)
+	}
+	if status := changePasswordStatus("admin", "new-strong-password", "another-password"); status != http.StatusBadRequest {
+		t.Fatalf("mismatched new passwords status = %d, want %d", status, http.StatusBadRequest)
+	}
+	if status := changePasswordStatus("admin", "new-strong-password", "new-strong-password"); status != http.StatusNoContent {
+		t.Fatalf("valid password change status = %d, want %d", status, http.StatusNoContent)
+	}
+	response, err = http.Post(server.URL+"/api/auth/login", "application/json",
+		jsonBody(map[string]string{"username": "admin", "password": "admin"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("login with previous password = %d, want %d", response.StatusCode, http.StatusUnauthorized)
+	}
+	response, err = http.Post(server.URL+"/api/auth/login", "application/json",
+		jsonBody(map[string]string{"username": "admin", "password": "new-strong-password"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("login with updated password = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/admin/accounts",
+		jsonBody(map[string]string{
+			"username": "operator", "password": "first-strong-password",
+			"confirm_password": "different-strong-password",
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+login.Token)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("mismatched account password status = %d, want %d", response.StatusCode, http.StatusBadRequest)
+	}
+
+	request, err = http.NewRequest(http.MethodPost, server.URL+"/api/admin/accounts",
+		jsonBody(map[string]string{
+			"username": "operator", "password": "a-strong-password",
+			"confirm_password": "a-strong-password",
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+login.Token)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var created struct {
+		Created bool `json:"created"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&created); err != nil {
+		response.Body.Close()
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated || !created.Created {
+		t.Fatalf("create admin account = %d, want %d", response.StatusCode, http.StatusCreated)
+	}
+
+	request, err = http.NewRequest(http.MethodGet, server.URL+"/api/admin/accounts", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer token-a")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("API token account access = %d, want %d", response.StatusCode, http.StatusForbidden)
+	}
+
+	request, err = http.NewRequest(http.MethodGet, server.URL+"/api/admin/accounts", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+login.Token)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var accounts []Account
+	if err := json.NewDecoder(response.Body).Decode(&accounts); err != nil {
+		response.Body.Close()
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(accounts) != 2 {
+		t.Fatalf("account list = (%d, %d accounts), want HTTP 200 and two accounts", response.StatusCode, len(accounts))
+	}
+
+	request, err = http.NewRequest(http.MethodDelete, server.URL+"/api/admin/accounts/admin", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+login.Token)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("delete active account = %d, want %d", response.StatusCode, http.StatusBadRequest)
+	}
+
+	request, err = http.NewRequest(http.MethodPost, server.URL+"/api/admin/accounts",
+		jsonBody(map[string]string{
+			"username": "blocked", "password": "short", "confirm_password": "short",
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+login.Token)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("short password account creation = %d, want %d", response.StatusCode, http.StatusBadRequest)
+	}
+}
+
+func TestWazuhConfigurationIsTestedAndPersisted(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "soc.db")
+	config := Config{
+		DatabasePath:      databasePath,
+		Tenants:           map[string]string{"token-a": "tenant-a"},
+		WazuhPollInterval: time.Minute,
+	}
+	backend, err := NewBackend(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wazuh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		username, password, ok := r.BasicAuth()
+		if !ok || username != "reader" || password != "test-password" {
+			t.Errorf("unexpected Wazuh credentials")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"hits":{"hits":[]}}`))
+	}))
+	server := httptest.NewServer(backend.Handler())
+
+	loginResponse, err := http.Post(server.URL+"/api/auth/login", "application/json",
+		jsonBody(map[string]string{"username": "admin", "password": "admin"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var login struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(loginResponse.Body).Decode(&login); err != nil {
+		loginResponse.Body.Close()
+		t.Fatal(err)
+	}
+	loginResponse.Body.Close()
+
+	request, err := http.NewRequest(http.MethodPut, server.URL+"/api/admin/wazuh", jsonBody(map[string]any{
+		"url": wazuh.URL, "username": "reader",
+		"password": "test-password", "verify_tls": true,
+		"alerts_index": "wazuh-alerts-*", "batch_size": 100,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+login.Token)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("save Wazuh configuration = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	request, err = http.NewRequest(http.MethodGet, server.URL+"/api/admin/wazuh", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+login.Token)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var savedConfiguration map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&savedConfiguration); err != nil {
+		response.Body.Close()
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || savedConfiguration["password_configured"] != true {
+		t.Fatalf("Wazuh configuration response = (%d, %#v)", response.StatusCode, savedConfiguration)
+	}
+	if _, exposesPassword := savedConfiguration["password"]; exposesPassword {
+		t.Fatal("Wazuh configuration response exposed the saved password")
+	}
+	if _, exposesTenant := savedConfiguration["tenant_id"]; exposesTenant {
+		t.Fatal("Wazuh configuration response exposed a tenant setting")
+	}
+
+	server.Close()
+	wazuh.Close()
+	if err := backend.Close(); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := NewBackend(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restarted.Close()
+	sources := restarted.wazuhSources()
+	if len(sources) != 1 || sources[0].Username != "reader" || sources[0].Password != "test-password" {
+		t.Fatalf("persisted Wazuh configuration = %#v", sources)
+	}
+}
+
+func TestWazuhConfigurationFailureIncludesSafeHTTPDetails(t *testing.T) {
+	backend := testBackend(t, "")
+	const responseDetail = `{"error":"security_exception: missing read permission; password=secret"}`
+	wazuh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(responseDetail))
+	}))
+	defer wazuh.Close()
+
+	source := WazuhSource{
+		TenantID: "tenant-a", URL: wazuh.URL, Username: "reader", Password: "secret",
+		AlertsIndex: "wazuh-alerts-*", BatchSize: 100,
+	}
+	err := backend.pollWazuh(context.Background(), source)
+	if err == nil {
+		t.Fatal("pollWazuh succeeded for an HTTP 403 response")
+	}
+	message := wazuhConfigurationFailure(err)
+	if !strings.Contains(message, "HTTP 403") ||
+		!strings.Contains(message, "security_exception: missing read permission") ||
+		!strings.Contains(message, "[redacted]") {
+		t.Fatalf("configuration error = %q, want status and Indexer response details", message)
+	}
+	if strings.Contains(message, source.Password) {
+		t.Fatal("configuration error exposed the Wazuh password")
+	}
+	if strings.Contains(err.Error(), responseDetail) {
+		t.Fatal("general collector error exposed the Indexer response body")
+	}
+}
+
 func jsonBody(value any) *strings.Reader {
 	encoded, err := json.Marshal(value)
 	if err != nil {

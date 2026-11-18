@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -31,6 +32,15 @@ type WazuhSourceStatus struct {
 	Error          string     `json:"error,omitempty"`
 }
 
+type wazuhHTTPError struct {
+	statusCode int
+	body       string
+}
+
+func (e *wazuhHTTPError) Error() string {
+	return fmt.Sprintf("Wazuh Indexer a répondu avec le statut HTTP %d", e.statusCode)
+}
+
 func wazuhSourceStatusKey(source WazuhSource) string {
 	return source.TenantID + "\x00" + source.URL + "\x00" + source.AlertsIndex
 }
@@ -39,8 +49,9 @@ func (b *Backend) WazuhStatus(tenantID string) []WazuhSourceStatus {
 	now := time.Now().UTC()
 	b.wazuhStatusMu.RLock()
 	defer b.wazuhStatusMu.RUnlock()
-	statuses := make([]WazuhSourceStatus, 0, len(b.config.WazuhSources))
-	for _, source := range b.config.WazuhSources {
+	sources := b.wazuhSources()
+	statuses := make([]WazuhSourceStatus, 0, len(sources))
+	for _, source := range sources {
 		if source.TenantID != tenantID {
 			continue
 		}
@@ -128,11 +139,52 @@ func (incident Incident) AgentName() string {
 }
 
 func (b *Backend) StartCollectors(ctx context.Context) {
-	for _, source := range b.config.WazuhSources {
-		source := source
-		b.workers.Add(1)
-		go b.runCollector(ctx, source)
+	b.collectorMu.Lock()
+	if b.collectorStarted {
+		b.collectorMu.Unlock()
+		return
 	}
+	b.collectorStarted = true
+	b.workers.Add(1)
+	b.collectorMu.Unlock()
+	go func() {
+		defer b.workers.Done()
+		var cancel context.CancelFunc
+		var sourceWorkers sync.WaitGroup
+		start := func(sources []WazuhSource) {
+			collectorCtx, stop := context.WithCancel(ctx)
+			cancel = stop
+			for _, source := range sources {
+				source := source
+				sourceWorkers.Add(1)
+				go func() {
+					defer sourceWorkers.Done()
+					b.runCollector(collectorCtx, source)
+				}()
+			}
+		}
+		stop := func() {
+			if cancel != nil {
+				cancel()
+				sourceWorkers.Wait()
+				cancel = nil
+			}
+		}
+		start(b.wazuhSources())
+		for {
+			select {
+			case <-ctx.Done():
+				stop()
+				return
+			case sources := <-b.collectorUpdates:
+				stop()
+				if ctx.Err() != nil {
+					return
+				}
+				start(sources)
+			}
+		}
+	}()
 }
 
 func (b *Backend) StartAIWorker(ctx context.Context) {
@@ -327,7 +379,23 @@ func (b *Backend) pollWazuh(ctx context.Context, source WazuhSource) (pollErr er
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("Wazuh Indexer a répondu avec le statut HTTP %d", response.StatusCode)
+		body, err := io.ReadAll(io.LimitReader(response.Body, 2048))
+		if err != nil {
+			return fmt.Errorf("Wazuh Indexer a répondu avec le statut HTTP %d ; lire le détail de l’erreur: %w",
+				response.StatusCode, err)
+		}
+		detail := strings.Map(func(character rune) rune {
+			if character < 0x20 && character != '\t' {
+				return ' '
+			}
+			return character
+		}, strings.TrimSpace(string(body)))
+		for _, credential := range []string{source.Username, source.Password} {
+			if credential != "" {
+				detail = strings.ReplaceAll(detail, credential, "[redacted]")
+			}
+		}
+		return &wazuhHTTPError{statusCode: response.StatusCode, body: detail}
 	}
 	var result struct {
 		Hits struct {

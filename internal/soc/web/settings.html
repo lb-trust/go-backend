@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Configuration — Console SOC</title>
+  <link rel="stylesheet" href="/assets/dashboard.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">TRUSTINFO SOC</p>
+        <h1>Configuration Wazuh</h1>
+      </div>
+      <nav class="maintenance-actions" aria-label="Navigation">
+        <a class="secondary maintenance-back" href="/">Retour au dashboard</a>
+        <a class="secondary maintenance-back" href="/accounts">Gestion des comptes</a>
+      </nav>
+    </header>
+
+    <section class="panel">
+      <p class="eyebrow">CONNEXION À L’INDEXER</p>
+      <h2>Source Wazuh</h2>
+      <p class="muted">Les groupes d’agents sont détectés dans les alertes et apparaissent automatiquement dans les filtres du dashboard.</p>
+      <p class="muted">La configuration, y compris le mot de passe Wazuh, est conservée dans la base SQLite locale du service.</p>
+      <form id="wazuh-form" class="admin-form">
+        <div class="field-help-control">
+          <label for="wazuh-url">URL de Wazuh Indexer</label>
+          <button class="info-toggle" type="button" aria-label="Aide pour l’URL Wazuh" aria-expanded="false" aria-controls="help-wazuh-url">i</button>
+          <div class="field-help" id="help-wazuh-url" role="tooltip" hidden>
+            <p>Saisissez l’adresse de l’Indexer, pas celle du Manager ou du Dashboard. Format habituel : <code>https://nom-ou-ip:9200</code>, sans chemin d’index. Sur le serveur, vérifiez <code>network.host</code> et <code>http.port</code> dans <code>/etc/wazuh-indexer/opensearch.yml</code>.</p>
+            <p>Pour tester depuis PowerShell, remplacez l’hôte et l’utilisateur. <code>curl.exe</code> demandera le mot de passe :</p>
+            <pre><code>curl.exe -u "UTILISATEUR" "https://INDEXER:9200"</code></pre>
+          </div>
+        </div>
+        <input id="wazuh-url" type="url" placeholder="https://indexer.example.lan:9200" required>
+        <div class="field-help-control">
+          <label for="wazuh-username">Utilisateur en lecture seule</label>
+          <button class="info-toggle" type="button" aria-label="Aide pour le compte Wazuh" aria-expanded="false" aria-controls="help-wazuh-username">i</button>
+          <div class="field-help" id="help-wazuh-username" role="tooltip" hidden>
+            <p>Utilisez un compte dédié en lecture seule, autorisé à rechercher dans l’index des alertes. Demandez-le à l’administrateur Wazuh. Sur le serveur Indexer, les noms de comptes se trouvent dans <code>/etc/wazuh-indexer/opensearch-security/internal_users.yml</code> :</p>
+            <pre><code>sudo grep -E '^[[:space:]]*[A-Za-z0-9_.-]+:' /etc/wazuh-indexer/opensearch-security/internal_users.yml</code></pre>
+          </div>
+        </div>
+        <input id="wazuh-username" autocomplete="username" required>
+        <div class="field-help-control">
+          <label for="wazuh-password">Mot de passe</label>
+          <button class="info-toggle" type="button" aria-label="Aide pour le mot de passe Wazuh" aria-expanded="false" aria-controls="help-wazuh-password">i</button>
+          <div class="field-help" id="help-wazuh-password" role="tooltip" hidden>
+            <p>Mot de passe du compte Indexer ci-dessus. Pour une configuration existante, laissez ce champ vide pour conserver le mot de passe enregistré. Il ne peut pas être retrouvé depuis le fichier des utilisateurs, car il y est stocké sous forme de hash ; demandez sa réinitialisation à l’administrateur. Ne le mettez pas dans une commande ni dans un message.</p>
+          </div>
+        </div>
+        <input id="wazuh-password" type="password" autocomplete="new-password">
+        <div class="field-help-control">
+          <label class="inline-option" for="wazuh-ignore-tls">
+            <input id="wazuh-ignore-tls" type="checkbox">
+            Ignorer les erreurs du certificat TLS (non recommandé)
+          </label>
+          <button class="info-toggle" type="button" aria-label="Aide pour le certificat TLS" aria-expanded="false" aria-controls="help-wazuh-tls">i</button>
+          <div class="field-help" id="help-wazuh-tls" role="tooltip" hidden>
+            <p>À cocher seulement si le certificat est auto-signé ou signé par une autorité non approuvée. Cela désactive sa vérification et expose la connexion à une interception. La meilleure solution est d’installer le certificat de l’autorité dans le magasin de certificats de la machine qui exécute ce service.</p>
+          </div>
+        </div>
+        <p class="muted">À activer uniquement si le certificat est auto-signé ou non reconnu. Cela réduit la sécurité de la connexion.</p>
+        <div class="field-help-control">
+          <label for="wazuh-index">Index des alertes</label>
+          <button class="info-toggle" type="button" aria-label="Aide pour l’index des alertes" aria-expanded="false" aria-controls="help-wazuh-index">i</button>
+          <div class="field-help" id="help-wazuh-index" role="tooltip" hidden>
+            <p>La valeur par défaut <code>wazuh-alerts-*</code> convient à la plupart des installations. Dans Wazuh Dashboard, ouvrez <strong>Outils de développement</strong> et exécutez :</p>
+            <pre><code>GET _cat/indices/wazuh-alerts-*?v</code></pre>
+            <p>Le compte configuré doit avoir le droit de lecture sur ces index.</p>
+          </div>
+        </div>
+        <input id="wazuh-index" value="wazuh-alerts-*" required>
+        <div class="field-help-control">
+          <label for="wazuh-batch-size">Alertes par contrôle (1–1000)</label>
+          <button class="info-toggle" type="button" aria-label="Aide pour le nombre d’alertes" aria-expanded="false" aria-controls="help-wazuh-batch-size">i</button>
+          <div class="field-help" id="help-wazuh-batch-size" role="tooltip" hidden>
+            <p>Nombre maximal d’alertes lues à chaque contrôle. Gardez <code>100</code> pour commencer ; augmentez si le volume est élevé. La limite acceptée est de 1 à 1000.</p>
+          </div>
+        </div>
+        <input id="wazuh-batch-size" type="number" min="1" max="1000" value="100" required>
+        <button id="save-wazuh" type="submit">Tester et enregistrer</button>
+        <button id="clear-wazuh" type="button" class="danger-button" hidden>Supprimer la configuration</button>
+      </form>
+      <p id="wazuh-config-message" class="message" role="status" aria-live="polite"></p>
+    </section>
+  </main>
+  <script src="/assets/admin.js" defer></script>
+</body>
+</html>
