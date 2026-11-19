@@ -19,7 +19,7 @@ Installez Go 1.24 ou plus récent et Git, puis récupérez le dépôt :
 
 ```bash
 sudo apt update
-sudo apt install -y git golang-go openssl
+sudo apt install -y git golang-go openssl python3
 go version
 git clone https://github.com/lb-trust/go-backend.git
 cd go-backend
@@ -129,35 +129,48 @@ est alors utilisé uniquement pour installer le service. Le dépôt doit être
 dans un chemin sans espaces. Si vous refusez l'installation, le backend reste
 lancé au premier plan dans le terminal.
 
+Le script demande aussi l'adresse IP autorisée à créer le premier compte
+administrateur. Saisissez l'IP publique ou privée depuis laquelle vous ouvrirez
+le navigateur ; cette IP exacte s'ajoute à l'accès local déjà autorisé.
+Entrée laisse la création réservée au serveur local, et `-` supprime une
+autorisation distante précédemment enregistrée. Cette règle ne concerne que
+la création initiale, qui ne peut réussir qu'une fois. L'accès distant doit se
+faire directement vers le serveur en HTTPS, et le pare-feu doit lui aussi
+autoriser uniquement les adresses nécessaires. Si vous passez par un proxy,
+l'application voit l'adresse du proxy et non celle de votre poste.
+
 Après le démarrage, ouvrez `https://soc.example.com:8080/`. Le nom DNS doit
 pointer vers le serveur et le pare-feu doit autoriser le port 8080 uniquement
-depuis le réseau de confiance. Pour vérifier le service :
+depuis le réseau de confiance. Le nom du service est un identifiant systemd,
+pas une commande à saisir seule. Par exemple, si vous avez choisi `go-soc`,
+utilisez ces commandes pour le gérer :
 
 ```bash
-sudo systemctl status go-soc-backend.service
-sudo journalctl -u go-soc-backend.service -f
+sudo systemctl status go-soc.service
+sudo journalctl -u go-soc.service -f
+sudo systemctl restart go-soc.service
+sudo systemctl stop go-soc.service
 ```
 
-Le premier compte administrateur ne peut être créé que depuis une connexion
-locale au serveur. Pour le créer depuis un autre poste, ouvrez un tunnel SSH :
+Remplacez `go-soc` par le nom choisi pendant l'installation.
+
+### Modifier la configuration après l'installation
+
+Pour relancer l'assistant, connectez-vous au serveur avec le compte qui a
+installé le service, placez-vous dans le dépôt et exécutez de nouveau :
 
 ```bash
-ssh -L 8080:127.0.0.1:8080 utilisateur@serveur
+cd ~/go-backend
+./start.sh
 ```
 
-Sur ce poste, faites temporairement résoudre le nom du certificat vers
-`127.0.0.1` en ajoutant cette ligne au fichier `hosts` :
-
-```text
-127.0.0.1 soc.example.com
-```
-
-Sous Linux, ce fichier est `/etc/hosts` ; sous Windows,
-`C:\Windows\System32\drivers\etc\hosts` (à modifier en administrateur).
-Ouvrez ensuite `https://soc.example.com:8080/`. Le nom correspond au
-certificat et le tunnel fournit la connexion locale requise pour créer le
-compte. Retirez l'entrée temporaire du fichier `hosts` ensuite ; l'accès
-normal se fait par le DNS du serveur.
+Quand une configuration existe, choisissez **1** pour la conserver ou **2**
+pour la modifier. Le mode modification permet de changer le DNS, le certificat,
+l'IP autorisée à créer le premier compte et la clé Wazuh ; le service existant
+est ensuite redémarré. Cela ne supprime pas la base SQLite, les comptes admin
+ni la configuration Wazuh qui y est enregistrée. Si vous choisissez de
+conserver la configuration, le script démarre le service existant sans la
+remplacer.
 
 Lors de la première visite, créez le compte administrateur ; les aides « i »
 expliquent les règles de saisie. Le mot de passe doit contenir au moins
@@ -375,6 +388,7 @@ d’exécution, pas une source du projet.
 | `SOC_TENANTS_JSON` | tenant `client-a`, sans jeton API | Objet JSON facultatif `jeton: tenant_id` pour les intégrations qui appellent l’API. |
 | `SOC_DB_PATH` | `soc.db` | Chemin de la base SQLite. |
 | `SOC_CREDENTIAL_KEY_FILE` | non défini | Fichier contenant la clé aléatoire de 32 octets qui chiffre le mot de passe Wazuh ; protège le fichier par des permissions réservées au compte du service. |
+| `SOC_SETUP_ALLOWED_IP` | vide | Adresse IPv4 ou IPv6 exacte autorisée en plus de la connexion locale à créer le premier compte admin ; par défaut, seule une connexion locale est autorisée. |
 | `SOC_HOST` / `SOC_PORT` | `127.0.0.1` / `8080` | Adresse et port du serveur HTTP. `go run` écoute localement ; `start.sh` configure `0.0.0.0` en HTTPS pour l’accès réseau. |
 | `SOC_TLS_CERT_FILE` / `SOC_TLS_KEY_FILE` | non définis | Certificat et clé PEM ; obligatoires ensemble pour écouter sur une adresse non locale. |
 | `OLLAMA_URL` | `http://127.0.0.1:11434` | Origine de l’API Ollama. |
@@ -408,14 +422,15 @@ locaux avec un certificat non approuvé.
 ## Accès réseau et sécurité
 
 Par défaut, le serveur écoute sur `127.0.0.1:8080` ; seul le serveur local peut
-accéder directement au dashboard. Effectuez la configuration initiale avant
-d’exposer le dashboard, par exemple depuis le serveur ou au moyen d’un tunnel
-SSH. La création initiale du compte est limitée aux connexions locales. Un
-reverse proxy exécuté sur le serveur est vu comme local par le backend : ne
-l’exposez qu’après la création du compte. Pour une exposition distante,
-utilisez `./start.sh` avec un certificat TLS couvrant le nom DNS du serveur.
-Le script écoute sur toutes les interfaces réseau. Une écoute distante est
-refusée sans certificat et clé TLS configurés. Limitez aussi les sources
+accéder directement au dashboard. `start.sh` permet d'autoriser une IP précise
+à créer le premier compte administrateur à distance. Cette autorisation est
+limitée à cette création initiale ; elle n'accorde pas de compte ni d'accès
+administrateur par elle-même. L'adresse est comparée à l'adresse réseau réelle
+de la connexion, sans faire confiance aux en-têtes proxy. Lorsqu'un proxy
+inverse est utilisé, le backend voit l'adresse du proxy. Pour une exposition
+distante, utilisez `./start.sh` avec un certificat TLS couvrant le nom DNS du
+serveur. Le script écoute sur toutes les interfaces réseau. Une écoute distante
+est refusée sans certificat et clé TLS configurés. Limitez aussi les sources
 autorisées avec un pare-feu.
 
 Le serveur utilise HTTP pour l’écoute locale par défaut. Toute écoute sur une

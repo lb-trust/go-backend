@@ -70,8 +70,9 @@ func loginAdmin(t *testing.T, server *httptest.Server) string {
 func TestFirstRunAdminSetupAndLegacyPasswordMigration(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "soc.db")
 	config := Config{
-		DatabasePath: databasePath,
-		Tenants:      map[string]string{"token-a": "tenant-a"},
+		DatabasePath:   databasePath,
+		Tenants:        map[string]string{"token-a": "tenant-a"},
+		SetupAllowedIP: "203.0.113.10",
 	}
 	backend, err := NewBackend(config)
 	if err != nil {
@@ -111,11 +112,24 @@ func TestFirstRunAdminSetupAndLegacyPasswordMigration(t *testing.T) {
 			"username": "remote-admin", "password": "first-run-secure-password",
 			"confirm_password": "first-run-secure-password",
 		}))
-	remoteSetupRequest.RemoteAddr = "203.0.113.10:12345"
+	remoteSetupRequest.RemoteAddr = "203.0.113.11:12345"
+	remoteSetupRequest.Header.Set("X-Forwarded-For", "203.0.113.10")
 	remoteSetupResponse := httptest.NewRecorder()
 	backend.setupAdminHandler(remoteSetupResponse, remoteSetupRequest)
 	if remoteSetupResponse.Code != http.StatusForbidden {
-		t.Fatalf("remote initial setup = %d, want %d", remoteSetupResponse.Code, http.StatusForbidden)
+		t.Fatalf("non-allowlisted remote initial setup = %d, want %d", remoteSetupResponse.Code, http.StatusForbidden)
+	}
+
+	allowedSetupRequest := httptest.NewRequest(http.MethodPost, "/api/setup/admin",
+		jsonBody(map[string]string{
+			"username": "remote-admin", "password": "short",
+			"confirm_password": "short",
+		}))
+	allowedSetupRequest.RemoteAddr = "203.0.113.10:12345"
+	allowedSetupResponse := httptest.NewRecorder()
+	backend.setupAdminHandler(allowedSetupResponse, allowedSetupRequest)
+	if allowedSetupResponse.Code != http.StatusBadRequest {
+		t.Fatalf("allowlisted remote initial setup with invalid password = %d, want %d", allowedSetupResponse.Code, http.StatusBadRequest)
 	}
 
 	setup := func(username, password, confirmation string) *http.Response {

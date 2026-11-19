@@ -14,6 +14,7 @@ func loadConfigWithEnv(t *testing.T, tenantConfig string) Config {
 	t.Setenv("SOC_TLS_CERT_FILE", "")
 	t.Setenv("SOC_TLS_KEY_FILE", "")
 	t.Setenv("SOC_CREDENTIAL_KEY_FILE", "")
+	t.Setenv("SOC_SETUP_ALLOWED_IP", "")
 	t.Setenv("SOC_TENANTS_JSON", tenantConfig)
 	t.Setenv("OLLAMA_URL", "")
 	t.Setenv("OLLAMA_MODEL", "")
@@ -93,5 +94,22 @@ func TestLoadConfigRequiresTLSCertificateAndKeyTogether(t *testing.T) {
 	t.Setenv("SOC_TLS_CERT_FILE", filepath.Join(t.TempDir(), "server.crt"))
 	if _, err := LoadConfig(); err == nil {
 		t.Fatal("expected unpaired TLS certificate to be rejected")
+	}
+}
+
+func TestLoadConfigValidatesSetupAllowedIP(t *testing.T) {
+	loadConfigWithEnv(t, "")
+	t.Setenv("SOC_SETUP_ALLOWED_IP", "203.0.113.10")
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.SetupAllowedIP != "203.0.113.10" {
+		t.Fatalf("setup allowed IP = %q, want 203.0.113.10", config.SetupAllowedIP)
+	}
+
+	t.Setenv("SOC_SETUP_ALLOWED_IP", "not-an-ip")
+	if _, err := LoadConfig(); err == nil {
+		t.Fatal("expected invalid setup allowed IP to be rejected")
 	}
 }

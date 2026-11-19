@@ -21,6 +21,7 @@ type Config struct {
 	TenantIDs         []string
 	TLSCertFile       string
 	TLSKeyFile        string
+	SetupAllowedIP    string
 	OllamaURL         string
 	OllamaModel       string
 	IrisBaseURL       string
@@ -48,6 +49,7 @@ func LoadConfig() (Config, error) {
 		CredentialKeyFile: os.Getenv("SOC_CREDENTIAL_KEY_FILE"),
 		TLSCertFile:       os.Getenv("SOC_TLS_CERT_FILE"),
 		TLSKeyFile:        os.Getenv("SOC_TLS_KEY_FILE"),
+		SetupAllowedIP:    os.Getenv("SOC_SETUP_ALLOWED_IP"),
 		Tenants:           make(map[string]string),
 		TenantIDs:         []string{"client-a"},
 		OllamaURL:         strings.TrimRight(envOr("OLLAMA_URL", "http://127.0.0.1:11434"), "/"),
@@ -64,6 +66,9 @@ func LoadConfig() (Config, error) {
 	}
 	if !isLoopbackHost(cfg.Host) && cfg.TLSCertFile == "" {
 		return Config{}, errors.New("une écoute réseau non locale exige SOC_TLS_CERT_FILE et SOC_TLS_KEY_FILE")
+	}
+	if cfg.SetupAllowedIP != "" && net.ParseIP(cfg.SetupAllowedIP) == nil {
+		return Config{}, errors.New("SOC_SETUP_ALLOWED_IP doit être une adresse IP valide")
 	}
 
 	port, err := strconv.Atoi(envOr("SOC_PORT", "8080"))
@@ -176,6 +181,19 @@ func isLoopbackHost(host string) bool {
 func isLoopbackRemoteAddr(remoteAddr string) bool {
 	host, _, err := net.SplitHostPort(remoteAddr)
 	return err == nil && isLoopbackHost(host)
+}
+
+func isSetupAllowedRemoteAddr(remoteAddr, allowedIP string) bool {
+	if allowedIP == "" {
+		return false
+	}
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return false
+	}
+	remoteIP := net.ParseIP(host)
+	configuredIP := net.ParseIP(allowedIP)
+	return remoteIP != nil && configuredIP != nil && remoteIP.Equal(configuredIP)
 }
 
 func validateURL(raw string, requireHTTPS bool) error {

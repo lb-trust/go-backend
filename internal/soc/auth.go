@@ -496,8 +496,9 @@ func (b *Backend) setupStatusHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Backend) setupAdminHandler(w http.ResponseWriter, r *http.Request) {
-	if !isLoopbackRemoteAddr(r.RemoteAddr) {
-		writeError(w, http.StatusForbidden, "la configuration initiale doit être effectuée depuis le serveur ou un tunnel local")
+	if !isLoopbackRemoteAddr(r.RemoteAddr) &&
+		!isSetupAllowedRemoteAddr(r.RemoteAddr, b.config.SetupAllowedIP) {
+		writeError(w, http.StatusForbidden, "la configuration initiale doit être effectuée depuis le serveur ou l'adresse IP autorisée")
 		return
 	}
 	var payload struct {
