@@ -921,8 +921,9 @@ func TestIncidentDetailAndStatusUpdateAPI(t *testing.T) {
 	}
 	response.Body.Close()
 	if response.StatusCode != http.StatusOK || len(incident.Alerts) != 1 ||
-		incident.Alerts[0].Occurrences != 1 {
-		t.Fatalf("incident detail response = (%d, alerts=%d), want HTTP 200 and one alert with one occurrence",
+		incident.Alerts[0].ID != incident.PrimaryAlertID ||
+		incident.Alerts[0].Occurrences != 1 || len(incident.Alerts[0].Raw) == 0 {
+		t.Fatalf("incident detail response = (%d, alerts=%d), want HTTP 200 and the primary alert with raw event details",
 			response.StatusCode, len(incident.Alerts))
 	}
 

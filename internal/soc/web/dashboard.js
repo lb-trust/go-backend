@@ -45,6 +45,7 @@ let latestAIEnabled = false;
 let latestQueuedIncidentIDs = new Set();
 let configuredGroups = null;
 let activeIncidentID = "";
+let activePrimaryAlert = null;
 let refreshTimer;
 
 function updateColumnFilterSummary() {
@@ -365,6 +366,12 @@ function setIncidentDetail(incident) {
 
   const alertContainer = document.querySelector("#detail-alerts");
   const alerts = incident.alerts || [];
+  activePrimaryAlert = alerts.find((alert) => alert.id === incident.primary_alert_id) || null;
+  document.querySelector("#detail-primary-description").textContent = activePrimaryAlert
+    ? `Règle ${activePrimaryAlert.rule_id} · niveau ${activePrimaryAlert.rule_level}/15 · ${activePrimaryAlert.occurrences} ${activePrimaryAlert.occurrences > 1 ? "occurrences" : "occurrence"} — ${activePrimaryAlert.description || "Aucune description"}`
+    : "";
+  document.querySelector("#view-primary-alert").hidden = !activePrimaryAlert;
+  document.querySelector("#detail-primary-unavailable").hidden = Boolean(activePrimaryAlert);
   document.querySelector("#detail-alert-count").textContent =
     `(${alerts.length} groupes)`;
   alertContainer.replaceChildren();
@@ -663,6 +670,9 @@ document.querySelector("#close-incident").addEventListener("click", () => {
 });
 document.querySelector("#close-alert").addEventListener("click", () => {
   alertDialog.close();
+});
+document.querySelector("#view-primary-alert").addEventListener("click", () => {
+  if (activePrimaryAlert) openAlertDetails(activePrimaryAlert);
 });
 alertDialog.addEventListener("click", (event) => {
   if (event.target === alertDialog) alertDialog.close();
