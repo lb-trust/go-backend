@@ -15,7 +15,7 @@ import (
 
 const wazuhPasswordCipherAAD = "wazuh-password:v1"
 
-var errCredentialKeyRequired = errors.New("SOC_CREDENTIAL_KEY_FILE doit désigner un fichier contenant une clé aléatoire de 32 octets")
+var errCredentialKeyRequired = errors.New("clé de chiffrement Wazuh indisponible ou invalide ; lancez le service avec start.sh ou définissez SOC_CREDENTIAL_KEY_FILE")
 
 type storedWazuhSource struct {
 	TenantID          string `json:"tenant_id"`

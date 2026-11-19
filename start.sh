@@ -7,6 +7,7 @@ config_tmp=""
 unit_tmp=""
 tls_cert_tmp=""
 tls_key_tmp=""
+credential_key_tmp=""
 cleanup() {
   if [[ -n "$config_tmp" ]]; then
     rm -f -- "$config_tmp"
@@ -19,6 +20,9 @@ cleanup() {
   fi
   if [[ -n "$tls_key_tmp" ]]; then
     rm -f -- "$tls_key_tmp"
+  fi
+  if [[ -n "$credential_key_tmp" ]]; then
+    rm -f -- "$credential_key_tmp"
   fi
 }
 trap cleanup EXIT
@@ -143,17 +147,6 @@ configure_network() {
     fi
   fi
 
-  if [[ -n "$SOC_START_CREDENTIAL_KEY_FILE" ]]; then
-    read -r -p "Fichier de clé de chiffrement Wazuh [$SOC_START_CREDENTIAL_KEY_FILE] (- pour aucun) : " input_value
-  else
-    read -r -p "Fichier de clé SOC_CREDENTIAL_KEY_FILE (Entrée si Wazuh n'est pas encore configuré) : " input_value
-  fi
-  if [[ "$input_value" == "-" ]]; then
-    SOC_START_CREDENTIAL_KEY_FILE=""
-  elif [[ -n "$input_value" ]]; then
-    SOC_START_CREDENTIAL_KEY_FILE="$input_value"
-  fi
-
   if [[ ! -f "$SOC_START_TLS_CERT_FILE" || ! -r "$SOC_START_TLS_CERT_FILE" ]]; then
     echo "Certificat introuvable ou illisible : $SOC_START_TLS_CERT_FILE" >&2
     return 1
@@ -188,6 +181,7 @@ if [[ -f "$config_file" ]]; then
   # shellcheck disable=SC1090
   source "$config_file"
   SOC_START_BIND_HOST="${SOC_START_BIND_HOST:-0.0.0.0}"
+  SOC_START_CREDENTIAL_KEY_FILE="${SOC_START_CREDENTIAL_KEY_FILE:-${SOC_CREDENTIAL_KEY_FILE:-}}"
   SOC_START_SETUP_ALLOWED_IP="${SOC_START_SETUP_ALLOWED_IP:-}"
   config_exists=1
 else
@@ -228,6 +222,45 @@ if [[ "$config_exists" -eq 0 || "$config_reconfigure" -eq 1 ]]; then
   fi
 
   configure_network
+fi
+
+credential_key_path_added=0
+if [[ -z "$SOC_START_CREDENTIAL_KEY_FILE" ]]; then
+  credential_key_path_added=1
+  credential_key_dir="$HOME/.config/go-backend"
+  SOC_START_CREDENTIAL_KEY_FILE="$credential_key_dir/wazuh.key"
+  mkdir -p "$credential_key_dir"
+  chmod 700 "$credential_key_dir"
+  if [[ -L "$SOC_START_CREDENTIAL_KEY_FILE" ]]; then
+    echo "Refus d'utiliser une clé Wazuh qui est un lien symbolique : $SOC_START_CREDENTIAL_KEY_FILE" >&2
+    exit 1
+  fi
+  if [[ ! -e "$SOC_START_CREDENTIAL_KEY_FILE" ]]; then
+    if ! command -v openssl >/dev/null; then
+      echo "OpenSSL est requis pour créer automatiquement la clé de chiffrement Wazuh." >&2
+      exit 1
+    fi
+    credential_key_tmp="$(mktemp "$credential_key_dir/.wazuh.key.XXXXXX")"
+    umask 077
+    if ! openssl rand -out "$credential_key_tmp" 32; then
+      echo "La création de la clé de chiffrement Wazuh a échoué." >&2
+      exit 1
+    fi
+    chmod 600 "$credential_key_tmp"
+    if ! ln "$credential_key_tmp" "$SOC_START_CREDENTIAL_KEY_FILE"; then
+      if [[ ! -f "$SOC_START_CREDENTIAL_KEY_FILE" ]]; then
+        echo "Impossible d'installer la clé de chiffrement Wazuh." >&2
+        exit 1
+      fi
+    fi
+    rm -f -- "$credential_key_tmp"
+    credential_key_tmp=""
+  fi
+  if [[ ! -f "$SOC_START_CREDENTIAL_KEY_FILE" ]]; then
+    echo "La clé de chiffrement Wazuh doit être un fichier ordinaire." >&2
+    exit 1
+  fi
+  chmod 600 "$SOC_START_CREDENTIAL_KEY_FILE"
 fi
 
 SOC_HOST="$SOC_START_BIND_HOST"
@@ -276,6 +309,12 @@ save_local_config() {
   mv "$config_tmp" "$config_file"
   config_tmp=""
 }
+
+if [[ "$credential_key_path_added" -eq 1 ]]; then
+  save_local_config
+  echo "Clé de chiffrement Wazuh configurée automatiquement : $SOC_START_CREDENTIAL_KEY_FILE"
+  echo "Conservez une sauvegarde protégée de ce fichier ; ne le placez pas dans le dépôt."
+fi
 
 if [[ "$config_reconfigure" -eq 1 ]]; then
   save_local_config
@@ -380,7 +419,11 @@ if [[ -z "${INVOCATION_ID:-}" && -t 0 ]] &&
       exit 1
     fi
     echo "Le service ${SOC_START_SERVICE_NAME}.service existe déjà."
-    sudo systemctl start "${SOC_START_SERVICE_NAME}.service"
+    if [[ "$credential_key_path_added" -eq 1 ]]; then
+      sudo systemctl restart "${SOC_START_SERVICE_NAME}.service"
+    else
+      sudo systemctl start "${SOC_START_SERVICE_NAME}.service"
+    fi
     exit 0
   fi
 

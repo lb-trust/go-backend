@@ -165,12 +165,11 @@ cd ~/go-backend
 ```
 
 Quand une configuration existe, choisissez **1** pour la conserver ou **2**
-pour la modifier. Le mode modification permet de changer le DNS, le certificat,
-l'IP autorisée à créer le premier compte et la clé Wazuh ; le service existant
-est ensuite redémarré. Cela ne supprime pas la base SQLite, les comptes admin
-ni la configuration Wazuh qui y est enregistrée. Si vous choisissez de
-conserver la configuration, le script démarre le service existant sans la
-remplacer.
+pour la modifier. Le mode modification permet de changer le DNS, le certificat
+et l'IP autorisée à créer le premier compte ; le service existant est ensuite
+redémarré. Cela ne supprime pas la base SQLite, les comptes admin ni la
+configuration Wazuh qui y est enregistrée. Si vous choisissez de conserver la
+configuration, le script démarre le service existant sans la remplacer.
 
 Lors de la première visite, créez le compte administrateur ; les aides « i »
 expliquent les règles de saisie. Le mot de passe doit contenir au moins
@@ -178,9 +177,9 @@ expliquent les règles de saisie. Le mot de passe doit contenir au moins
 Depuis **Configuration**, ouvrez **Configuration Wazuh** pour saisir l'URL de
 l'Indexer, le compte en lecture seule et son mot de passe. La connexion est
 testée avant l'enregistrement dans SQLite et la collecte démarre sans
-redémarrage. Avant d'enregistrer un mot de passe Wazuh, configurez sa clé de
-chiffrement comme décrit dans **Accès réseau et sécurité**. Chaque champ
-Wazuh comporte une aide « i » avec des exemples.
+redémarrage. `start.sh` crée automatiquement la clé locale nécessaire au
+chiffrement du mot de passe ; aucune case ni clé à saisir dans l'interface
+n'est nécessaire. Chaque champ Wazuh comporte une aide « i » avec des exemples.
 
 Les groupes d'agents sont découverts à partir des alertes et affichés en ordre
 alphabétique dans les filtres du dashboard.
@@ -387,7 +386,7 @@ d’exécution, pas une source du projet.
 | `WAZUH_POLL_SECONDS` | `60` | Période entre les contrôles ; minimum 15 secondes. |
 | `SOC_TENANTS_JSON` | tenant `client-a`, sans jeton API | Objet JSON facultatif `jeton: tenant_id` pour les intégrations qui appellent l’API. |
 | `SOC_DB_PATH` | `soc.db` | Chemin de la base SQLite. |
-| `SOC_CREDENTIAL_KEY_FILE` | non défini | Fichier contenant la clé aléatoire de 32 octets qui chiffre le mot de passe Wazuh ; protège le fichier par des permissions réservées au compte du service. |
+| `SOC_CREDENTIAL_KEY_FILE` | généré par `start.sh` | Fichier de clé aléatoire de 32 octets utilisé pour chiffrer le mot de passe Wazuh. En lancement manuel du binaire, fournissez vous-même ce chemin. |
 | `SOC_SETUP_ALLOWED_IP` | vide | Adresse IPv4 ou IPv6 exacte autorisée en plus de la connexion locale à créer le premier compte admin ; par défaut, seule une connexion locale est autorisée. |
 | `SOC_HOST` / `SOC_PORT` | `127.0.0.1` / `8080` | Adresse et port du serveur HTTP. `go run` écoute localement ; `start.sh` configure `0.0.0.0` en HTTPS pour l’accès réseau. |
 | `SOC_TLS_CERT_FILE` / `SOC_TLS_KEY_FILE` | non définis | Certificat et clé PEM ; obligatoires ensemble pour écouter sur une adresse non locale. |
@@ -436,34 +435,20 @@ autorisées avec un pare-feu.
 Le serveur utilise HTTP pour l’écoute locale par défaut. Toute écoute sur une
 adresse non locale utilise TLS avec `SOC_TLS_CERT_FILE` et `SOC_TLS_KEY_FILE`.
 Utilisez un compte Wazuh en lecture seule. Son mot de passe est chiffré dans
-SQLite avec AES-GCM ; `SOC_CREDENTIAL_KEY_FILE` doit désigner un fichier
-contenant exactement 32 octets aléatoires, lisible uniquement par le compte du
-service. Par exemple, créez la clé sous un compte qui peut ensuite la rendre
-accessible au service :
+SQLite avec AES-GCM. Quand vous lancez le service avec `start.sh`, le script
+crée automatiquement la clé aléatoire de 32 octets dans
+`~/.config/go-backend/wazuh.key`, avec des permissions privées, puis la
+réutilise à chaque démarrage. Vous n'avez rien à saisir dans l'interface
+Wazuh pour cette clé.
 
-```bash
-umask 077
-mkdir -p "$HOME/.config/go-backend"
-chmod 700 "$HOME/.config/go-backend"
-openssl rand -out "$HOME/.config/go-backend/wazuh.key" 32
-chmod 600 "$HOME/.config/go-backend/wazuh.key"
-```
-
-Si cette clé est prête avant le premier démarrage, saisissez son chemin lorsque
-`start.sh` le demande. Sinon, ajoutez après sa création cette ligne dans
-`.soc-service.env`, puis redémarrez le service :
-
-```text
-SOC_CREDENTIAL_KEY_FILE=/home/leo/.config/go-backend/wazuh.key
-```
-
-Le compte du service doit pouvoir lire la clé. Sauvegardez-la séparément de la
-base : sans elle, le backend ne peut pas déchiffrer les identifiants Wazuh et
-refuse de démarrer. Les anciens mots de passe en clair sont chiffrés
-automatiquement au démarrage lorsque la clé est configurée ; protégez ou
-supprimez aussi les anciennes sauvegardes qui peuvent encore contenir ces mots
-de passe. Pour IRIS, gardez la clé API dans l’environnement ou un gestionnaire
-de secrets, jamais dans le dépôt.
+Sauvegardez ce fichier séparément de la base et protégez sa copie : sans la clé,
+le backend ne peut pas déchiffrer les identifiants Wazuh. Ne la supprimez pas
+et ne la mettez pas dans le dépôt. Les anciens mots de passe en clair sont
+chiffrés automatiquement au démarrage lorsque la clé est disponible ; protégez
+ou supprimez aussi les anciennes sauvegardes qui peuvent encore les contenir.
+Pour un lancement manuel du binaire sans `start.sh`, il faut fournir un fichier
+de clé et définir `SOC_CREDENTIAL_KEY_FILE`. Pour IRIS, gardez la clé API dans
+l'environnement ou un gestionnaire de secrets, jamais dans le dépôt.
 
 Pour un exemple détaillé de déploiement avec Nginx et TLS sur Debian 13, voir
 [SECURISER-HTTP-DEBIAN-13.md](./SECURISER-HTTP-DEBIAN-13.md).
