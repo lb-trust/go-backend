@@ -110,6 +110,128 @@ func TestIngestGroupsAlertsAndDeduplicatesWazuhIDs(t *testing.T) {
 	}
 }
 
+func TestIncidentOccurrencesCountOnlyPrimaryAlert(t *testing.T) {
+	backend := testBackend(t, "")
+	ctx := context.Background()
+
+	ingest := func(id, ruleID, description string) Alert {
+		t.Helper()
+		payload := alertPayload(id, highAlertLevel, "agent-primary-count", "")
+		payload["rule"].(map[string]any)["id"] = ruleID
+		payload["rule"].(map[string]any)["description"] = description
+		alert, _, err := backend.IngestAlert(ctx, "tenant-a", payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return alert
+	}
+
+	mainAlert := ingest("main-event-1", "main-rule", "Événement principal")
+	ingest("other-event-1", "other-rule", "Événement associé")
+	ingest("main-event-2", "main-rule", "Événement principal")
+	ingest("other-event-2", "other-rule", "Événement associé")
+
+	incidents, err := backend.ListIncidents(ctx, "tenant-a", "", 10)
+	if err != nil || len(incidents) != 1 {
+		t.Fatalf("incidents = %#v, error = %v; want one correlated incident", incidents, err)
+	}
+	incident, err := backend.GetIncident(ctx, "tenant-a", incidents[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if incident.PrimaryAlertID != mainAlert.ID || incident.Occurrences != 2 {
+		t.Fatalf("primary alert/count = %q/%d, want %q/2",
+			incident.PrimaryAlertID, incident.Occurrences, mainAlert.ID)
+	}
+	if len(incident.Alerts) != 2 {
+		t.Fatalf("associated alert groups = %d, want 2", len(incident.Alerts))
+	}
+	for _, alert := range incident.Alerts {
+		if alert.Occurrences != 2 {
+			t.Fatalf("associated alert %q occurrences = %d, want 2", alert.RuleID, alert.Occurrences)
+		}
+	}
+
+	ingest("main-event-3", "main-rule", "Événement principal")
+	incident, err = backend.GetIncident(ctx, "tenant-a", incidents[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if incident.Occurrences != 3 {
+		t.Fatalf("primary event occurrences after another event = %d, want 3", incident.Occurrences)
+	}
+}
+
+func TestExistingIncidentsMigratePrimaryAlertOccurrences(t *testing.T) {
+	config := Config{
+		DatabasePath: filepath.Join(t.TempDir(), "soc.db"),
+		Tenants:      map[string]string{"token-a": "tenant-a"},
+	}
+	backend, err := NewBackend(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for _, event := range []struct {
+		id          string
+		ruleID      string
+		description string
+	}{
+		{"main-migration-1", "main-rule", "Événement principal"},
+		{"main-migration-2", "main-rule", "Événement principal"},
+		{"other-migration-1", "other-rule", "Événement associé"},
+	} {
+		payload := alertPayload(event.id, highAlertLevel, "agent-migration", "")
+		payload["rule"].(map[string]any)["id"] = event.ruleID
+		payload["rule"].(map[string]any)["description"] = event.description
+		if _, _, err := backend.IngestAlert(ctx, "tenant-a", payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	incidents, err := backend.ListIncidents(ctx, "tenant-a", "", 10)
+	if err != nil || len(incidents) != 1 {
+		t.Fatalf("incidents = %#v, error = %v; want one incident", incidents, err)
+	}
+	if _, err := backend.db.ExecContext(ctx,
+		`UPDATE incidents SET primary_alert_id = '', occurrences = 3 WHERE id = ?`,
+		incidents[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := sql.Open("sqlite", config.DatabasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`ALTER TABLE incidents DROP COLUMN primary_alert_id`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	backend, err = NewBackend(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := backend.Close(); err != nil {
+			t.Errorf("close migrated backend: %v", err)
+		}
+	}()
+	incident, err := backend.GetIncident(ctx, "tenant-a", incidents[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if incident.PrimaryAlertID == "" || incident.Occurrences != 2 {
+		t.Fatalf("migrated primary alert/count = %q/%d, want a primary alert with 2 occurrences",
+			incident.PrimaryAlertID, incident.Occurrences)
+	}
+}
+
 func TestLowLevelAlertsOnlyCreateIncidentAfterRepeatedOccurrences(t *testing.T) {
 	backend := testBackend(t, "")
 	ctx := context.Background()

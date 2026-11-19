@@ -85,24 +85,25 @@ type Alert struct {
 }
 
 type Incident struct {
-	ID          string    `json:"id"`
-	TenantID    string    `json:"tenant_id"`
-	Title       string    `json:"title"`
-	Status      string    `json:"status"`
-	Severity    string    `json:"severity"`
-	Score       int       `json:"score"`
-	AgentID     string    `json:"agent_id,omitempty"`
-	AgentLabel  string    `json:"agent_name,omitempty"`
-	AgentIP     string    `json:"agent_ip,omitempty"`
-	AgentGroups []string  `json:"agent_groups"`
-	SourceIP    string    `json:"source_ip,omitempty"`
-	RuleLevel   int       `json:"rule_level"`
-	Occurrences int       `json:"occurrences"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	Feedback    []string  `json:"feedback"`
-	Analysis    string    `json:"analysis,omitempty"`
-	Alerts      []Alert   `json:"alerts,omitempty"`
+	ID             string    `json:"id"`
+	TenantID       string    `json:"tenant_id"`
+	Title          string    `json:"title"`
+	Status         string    `json:"status"`
+	Severity       string    `json:"severity"`
+	Score          int       `json:"score"`
+	AgentID        string    `json:"agent_id,omitempty"`
+	AgentLabel     string    `json:"agent_name,omitempty"`
+	AgentIP        string    `json:"agent_ip,omitempty"`
+	AgentGroups    []string  `json:"agent_groups"`
+	SourceIP       string    `json:"source_ip,omitempty"`
+	RuleLevel      int       `json:"rule_level"`
+	PrimaryAlertID string    `json:"primary_alert_id"`
+	Occurrences    int       `json:"occurrences"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	Feedback       []string  `json:"feedback"`
+	Analysis       string    `json:"analysis,omitempty"`
+	Alerts         []Alert   `json:"alerts,omitempty"`
 }
 
 type DatabaseStorageStats struct {
@@ -236,6 +237,7 @@ CREATE TABLE IF NOT EXISTS incidents (
     agent_id TEXT NOT NULL DEFAULT '',
     source_ip TEXT NOT NULL DEFAULT '',
     rule_level INTEGER NOT NULL,
+    primary_alert_id TEXT NOT NULL DEFAULT '',
     occurrences INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -264,6 +266,61 @@ CREATE TABLE IF NOT EXISTS soc_settings (
 );`
 	if _, err := b.db.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("initialiser le schéma SQLite: %w", err)
+	}
+	var hasPrimaryAlertID bool
+	incidentColumns, err := b.db.QueryContext(ctx, `PRAGMA table_info(incidents)`)
+	if err != nil {
+		return fmt.Errorf("vérifier le schéma des incidents: %w", err)
+	}
+	for incidentColumns.Next() {
+		var index, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue sql.NullString
+		if err := incidentColumns.Scan(&index, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			incidentColumns.Close()
+			return fmt.Errorf("lire le schéma des incidents: %w", err)
+		}
+		if name == "primary_alert_id" {
+			hasPrimaryAlertID = true
+		}
+	}
+	if err := incidentColumns.Err(); err != nil {
+		incidentColumns.Close()
+		return fmt.Errorf("lire le schéma des incidents: %w", err)
+	}
+	if err := incidentColumns.Close(); err != nil {
+		return fmt.Errorf("fermer le schéma des incidents: %w", err)
+	}
+	if !hasPrimaryAlertID {
+		if _, err := b.db.ExecContext(ctx,
+			`ALTER TABLE incidents ADD COLUMN primary_alert_id TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("mettre à jour le schéma des incidents: %w", err)
+		}
+	}
+	if _, err := b.db.ExecContext(ctx, `
+		UPDATE incidents
+		   SET primary_alert_id = COALESCE(
+		       (SELECT ia.alert_id
+		          FROM incident_alerts ia
+		          JOIN alert_groups ag ON ag.id = ia.alert_id
+		         WHERE ia.incident_id = incidents.id AND ag.description = incidents.title
+		         ORDER BY ag.first_seen, ag.id LIMIT 1),
+		       (SELECT ia.alert_id
+		          FROM incident_alerts ia
+		          JOIN alert_groups ag ON ag.id = ia.alert_id
+		         WHERE ia.incident_id = incidents.id
+		         ORDER BY ag.first_seen, ag.id LIMIT 1),
+		       '')
+		 WHERE primary_alert_id = ''`); err != nil {
+		return fmt.Errorf("identifier l'événement principal des incidents existants: %w", err)
+	}
+	if _, err := b.db.ExecContext(ctx, `
+		UPDATE incidents
+		   SET occurrences = (SELECT ag.occurrences FROM alert_groups ag
+		                       WHERE ag.id = incidents.primary_alert_id)
+		 WHERE primary_alert_id <> ''
+		   AND EXISTS (SELECT 1 FROM alert_groups ag WHERE ag.id = incidents.primary_alert_id)`); err != nil {
+		return fmt.Errorf("recalculer les occurrences principales des incidents: %w", err)
 	}
 	var hasForcedColumn bool
 	columns, err := b.db.QueryContext(ctx, `PRAGMA table_info(incident_ai_jobs)`)
@@ -601,10 +658,10 @@ func (b *Backend) correlateIncident(ctx context.Context, tx *sql.Tx, alert Alert
 		_, err = tx.ExecContext(ctx,
 			`INSERT INTO incidents
 			 (id, tenant_id, title, status, severity, score, agent_id, source_ip, rule_level,
-			  occurrences, created_at, updated_at)
-			 VALUES(?, ?, ?, 'open', ?, ?, ?, ?, ?, 1, ?, ?)`,
+			  primary_alert_id, occurrences, created_at, updated_at)
+			 VALUES(?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			incidentID, alert.TenantID, alert.Description, severityFor(score), score,
-			alert.AgentID, alert.SourceIP, alert.RuleLevel,
+			alert.AgentID, alert.SourceIP, alert.RuleLevel, alert.ID, alert.Occurrences,
 			formatDatabaseTime(now), formatDatabaseTime(now))
 		if err != nil {
 			return "", fmt.Errorf("créer l'incident corrélé: %w", err)
@@ -613,11 +670,13 @@ func (b *Backend) correlateIncident(ctx context.Context, tx *sql.Tx, alert Alert
 		return "", fmt.Errorf("rechercher un incident corrélé: %w", err)
 	} else {
 		_, err = tx.ExecContext(ctx,
-			`UPDATE incidents SET updated_at = ?, occurrences = occurrences + 1,
+			`UPDATE incidents SET updated_at = ?,
+			 occurrences = CASE WHEN primary_alert_id = ? THEN ? ELSE occurrences END,
 			 rule_level = MAX(rule_level, ?), score = MAX(score, ?),
 			 severity = CASE WHEN ? > score THEN ? ELSE severity END
 			 WHERE id = ?`,
-			formatDatabaseTime(now), alert.RuleLevel, score, score, severityFor(score), incidentID)
+			formatDatabaseTime(now), alert.ID, alert.Occurrences,
+			alert.RuleLevel, score, score, severityFor(score), incidentID)
 		if err != nil {
 			return "", fmt.Errorf("mettre à jour l'incident corrélé: %w", err)
 		}
@@ -728,7 +787,7 @@ func (b *Backend) ListAgentGroups(ctx context.Context, tenantID string) ([]strin
 
 func (b *Backend) ListIncidents(ctx context.Context, tenantID, status string, limit int) ([]Incident, error) {
 	query := `SELECT id, tenant_id, title, status, severity, score, agent_id, source_ip,
-	                 rule_level, occurrences, created_at, updated_at, feedback_json, analysis,
+	                 rule_level, primary_alert_id, occurrences, created_at, updated_at, feedback_json, analysis,
 	                 COALESCE((SELECT ag.agent_name FROM incident_alerts ia
 	                           JOIN alert_groups ag ON ag.id = ia.alert_id
 	                          WHERE ia.incident_id = i.id
@@ -769,7 +828,7 @@ func scanIncident(scanner interface{ Scan(...any) error }) (Incident, error) {
 	if err := scanner.Scan(
 		&incident.ID, &incident.TenantID, &incident.Title, &incident.Status,
 		&incident.Severity, &incident.Score, &incident.AgentID, &incident.SourceIP,
-		&incident.RuleLevel, &incident.Occurrences, &created, &updated,
+		&incident.RuleLevel, &incident.PrimaryAlertID, &incident.Occurrences, &created, &updated,
 		&feedback, &incident.Analysis, &incident.AgentLabel, &agentRaw); err != nil {
 		return Incident{}, fmt.Errorf("lire un incident: %w", err)
 	}
@@ -794,7 +853,7 @@ func scanIncident(scanner interface{ Scan(...any) error }) (Incident, error) {
 func (b *Backend) GetIncident(ctx context.Context, tenantID, id string) (Incident, error) {
 	row := b.db.QueryRowContext(ctx,
 		`SELECT id, tenant_id, title, status, severity, score, agent_id, source_ip,
-		        rule_level, occurrences, created_at, updated_at, feedback_json, analysis,
+		        rule_level, primary_alert_id, occurrences, created_at, updated_at, feedback_json, analysis,
 		        COALESCE((SELECT ag.agent_name FROM incident_alerts ia
 		                  JOIN alert_groups ag ON ag.id = ia.alert_id
 		                  WHERE ia.incident_id = i.id
@@ -815,8 +874,9 @@ func (b *Backend) GetIncident(ctx context.Context, tenantID, id string) (Inciden
 		return Incident{}, err
 	}
 	rows, err := b.db.QueryContext(ctx,
-		`SELECT alert_id FROM incident_alerts WHERE incident_id = ? ORDER BY alert_id`,
-		id)
+		`SELECT alert_id FROM incident_alerts WHERE incident_id = ?
+		 ORDER BY CASE WHEN alert_id = ? THEN 0 ELSE 1 END, alert_id`,
+		id, incident.PrimaryAlertID)
 	if err != nil {
 		return Incident{}, fmt.Errorf("lister les alertes liées à l'incident: %w", err)
 	}

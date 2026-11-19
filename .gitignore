@@ -1,6 +1,7 @@
-/soc.db
-/soc.db-shm
-/soc.db-wal
+soc.db
+soc.db-shm
+soc.db-wal
+soc.db-journal
 /.soc-api-token
 /bin/
 /coverage.out

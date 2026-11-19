@@ -24,7 +24,7 @@ const incidentColumns = [
   { key: "severity", label: "Sévérité", default: true },
   { key: "status", label: "Statut", default: true },
   { key: "level", label: "Niveau Wazuh", default: true },
-  { key: "occurrences", label: "Occurrences", default: true },
+  { key: "occurrences", label: "Occurrences (événement principal)", default: true },
   { key: "agentGroups", label: "Groupe(s) de l’agent" },
   { key: "agentName", label: "Nom de l’agent" },
   { key: "agentIP", label: "IP de l’agent" },
@@ -362,9 +362,8 @@ function setIncidentDetail(incident) {
 
   const alertContainer = document.querySelector("#detail-alerts");
   const alerts = incident.alerts || [];
-  const totalOccurrences = alerts.reduce((total, alert) => total + (alert.occurrences || 0), 0);
   document.querySelector("#detail-alert-count").textContent =
-    `(${alerts.length} groupes · ${totalOccurrences} ${totalOccurrences > 1 ? "occurrences" : "occurrence"})`;
+    `(${alerts.length} groupes)`;
   alertContainer.replaceChildren();
   for (const alert of alerts) {
     const item = document.createElement("article");
@@ -388,6 +387,12 @@ function setIncidentDetail(incident) {
     occurrences.className = "badge";
     occurrences.textContent = `${alert.occurrences} ${alert.occurrences > 1 ? "occurrences" : "occurrence"}`;
     heading.append(occurrences);
+    if (alert.id === incident.primary_alert_id) {
+      const primary = document.createElement("span");
+      primary.className = "badge";
+      primary.textContent = "Événement principal";
+      heading.append(primary);
+    }
     const time = document.createElement("span");
     time.className = "muted";
     time.textContent = formatStatusTime(alert.timestamp);
