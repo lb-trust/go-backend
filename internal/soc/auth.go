@@ -278,6 +278,9 @@ func (b *Backend) revokeSession(token string) {
 
 func (b *Backend) tenantIDs() []string {
 	tenants := make(map[string]struct{})
+	for _, tenantID := range b.config.TenantIDs {
+		tenants[tenantID] = struct{}{}
+	}
 	for _, tenantID := range b.config.Tenants {
 		tenants[tenantID] = struct{}{}
 	}

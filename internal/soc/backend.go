@@ -115,7 +115,7 @@ type DatabaseStorageStats struct {
 }
 
 func NewBackend(cfg Config) (*Backend, error) {
-	if len(cfg.Tenants) == 0 {
+	if len(cfg.Tenants) == 0 && len(cfg.TenantIDs) == 0 {
 		return nil, errors.New("au moins un tenant doit être configuré")
 	}
 	db, err := sql.Open("sqlite", cfg.DatabasePath)

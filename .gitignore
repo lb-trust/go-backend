@@ -3,5 +3,7 @@ soc.db-shm
 soc.db-wal
 soc.db-journal
 /.soc-api-token
+/.soc-network.env
+/.soc-service.env
 /bin/
 /coverage.out

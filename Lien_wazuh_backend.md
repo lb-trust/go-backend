@@ -31,7 +31,7 @@ exemples à remplacer par les valeurs de l'environnement cible.
 - Le certificat TLS présenté par l'Indexer est approuvé par le système
   d'exploitation du backend.
 - Un tenant est configuré dans le backend. Sans configuration spécifique,
-  le backend crée le tenant `client-a` et un jeton API au premier démarrage.
+  le backend utilise le tenant `client-a` sans générer de jeton API.
 - Un compte Wazuh dédié, limité à la lecture des alertes, est disponible.
 
 ## 1. Vérifier la disponibilité de l'Indexer
@@ -141,25 +141,17 @@ Le backend écoute sur le port `8080` par défaut. Les journaux permettent de
 repérer les erreurs de connexion, d'authentification, de permissions, de TLS
 ou d'ingestion.
 
-Dans un second terminal, définissez le jeton API SOC. Par défaut, il est
-conservé dans `.soc-api-token` après sa génération au premier démarrage :
-
-```bash
-export SOC_API_TOKEN="$(cat .soc-api-token)"
-```
-
-Vérifiez le service, puis consultez le tableau de bord et les alertes :
+Vérifiez le service, puis ouvrez le tableau de bord dans un navigateur. À la
+première ouverture, créez le compte administrateur ; ensuite, connectez-vous
+avec ce compte :
 
 ```bash
 curl -sS http://127.0.0.1:8080/health
-curl -sS -H "Authorization: Bearer ${SOC_API_TOKEN}" \
-  http://127.0.0.1:8080/api/dashboard
-curl -sS -H "Authorization: Bearer ${SOC_API_TOKEN}" \
-  'http://127.0.0.1:8080/api/alerts?limit=5'
 ```
 
-Les routes `/api/...` requièrent un jeton API valide. Le jeton SOC est distinct
-du mot de passe du compte Wazuh.
+Les jetons API ne sont pas nécessaires pour le dashboard ni pour la collecte
+Wazuh intégrée. Ils ne servent qu'aux intégrations externes explicitement
+configurées avec `SOC_TENANTS_JSON`.
 
 ## 5. Format des timestamps
 

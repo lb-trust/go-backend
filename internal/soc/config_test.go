@@ -3,11 +3,10 @@ package soc
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 )
 
-func loadConfigWithEnv(t *testing.T, tokenFile, tenantConfig string) Config {
+func loadConfigWithEnv(t *testing.T, tenantConfig string) Config {
 	t.Helper()
 	t.Setenv("SOC_HOST", "")
 	t.Setenv("SOC_PORT", "")
@@ -15,7 +14,6 @@ func loadConfigWithEnv(t *testing.T, tokenFile, tenantConfig string) Config {
 	t.Setenv("SOC_TLS_CERT_FILE", "")
 	t.Setenv("SOC_TLS_KEY_FILE", "")
 	t.Setenv("SOC_CREDENTIAL_KEY_FILE", "")
-	t.Setenv("SOC_API_TOKEN_FILE", tokenFile)
 	t.Setenv("SOC_TENANTS_JSON", tenantConfig)
 	t.Setenv("OLLAMA_URL", "")
 	t.Setenv("OLLAMA_MODEL", "")
@@ -31,49 +29,36 @@ func loadConfigWithEnv(t *testing.T, tokenFile, tenantConfig string) Config {
 	return config
 }
 
-func TestLoadConfigGeneratesAndReusesAPIToken(t *testing.T) {
+func TestLoadConfigUsesDefaultTenantWithoutGeneratingAPIToken(t *testing.T) {
 	tokenFile := filepath.Join(t.TempDir(), "api-token")
-	first := loadConfigWithEnv(t, tokenFile, "")
-	if first.Host != "127.0.0.1" {
-		t.Fatalf("default host = %q, want 127.0.0.1", first.Host)
+	t.Setenv("SOC_API_TOKEN_FILE", tokenFile)
+	config := loadConfigWithEnv(t, "")
+	if config.Host != "127.0.0.1" {
+		t.Fatalf("default host = %q, want 127.0.0.1", config.Host)
 	}
-	if !validAPIToken(first.GeneratedToken) {
-		t.Fatalf("generated token has an invalid shape: %q", first.GeneratedToken)
+	if len(config.Tenants) != 0 {
+		t.Fatalf("default API tokens = %#v, want none", config.Tenants)
 	}
-	if first.Tenants[first.GeneratedToken] != "client-a" {
-		t.Fatalf("generated token is not assigned to client-a")
+	if !tenantExists(config, "client-a") {
+		t.Fatal("default client-a tenant is missing")
 	}
-	info, err := os.Stat(tokenFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
-		t.Fatalf("token file permissions are too open: %o", info.Mode().Perm())
-	}
-
-	second := loadConfigWithEnv(t, tokenFile, "")
-	if second.GeneratedToken != first.GeneratedToken {
-		t.Fatalf("token changed between restarts: %q != %q", second.GeneratedToken, first.GeneratedToken)
+	if _, err := os.Stat(tokenFile); !os.IsNotExist(err) {
+		t.Fatalf("API token file should not be generated; stat error = %v", err)
 	}
 }
 
 func TestLoadConfigKeepsExplicitTenantTokens(t *testing.T) {
-	tokenFile := filepath.Join(t.TempDir(), "api-token")
-	config := loadConfigWithEnv(t, tokenFile, `{"my-existing-token":"tenant-a"}`)
-	if config.GeneratedToken != "" {
-		t.Fatal("explicitly configured tenant token should not be replaced")
-	}
+	config := loadConfigWithEnv(t, `{"my-existing-token":"tenant-a"}`)
 	if config.Tenants["my-existing-token"] != "tenant-a" {
 		t.Fatalf("explicit token mapping = %#v", config.Tenants)
 	}
-	if _, err := os.Stat(tokenFile); !os.IsNotExist(err) {
-		t.Fatalf("automatic token file should not be created; stat error = %v", err)
+	if !tenantExists(config, "tenant-a") {
+		t.Fatal("tenant associated with the explicit API token is missing")
 	}
 }
 
 func TestLoadConfigReadsCredentialKeyFile(t *testing.T) {
-	tokenFile := filepath.Join(t.TempDir(), "api-token")
-	config := loadConfigWithEnv(t, tokenFile, "")
+	loadConfigWithEnv(t, "")
 	keyFile := filepath.Join(t.TempDir(), "wazuh.key")
 	t.Setenv("SOC_CREDENTIAL_KEY_FILE", keyFile)
 	config, err := LoadConfig()
@@ -85,34 +70,8 @@ func TestLoadConfigReadsCredentialKeyFile(t *testing.T) {
 	}
 }
 
-func TestLoadConfigRejectsInvalidSavedToken(t *testing.T) {
-	tokenFile := filepath.Join(t.TempDir(), "api-token")
-	if err := os.WriteFile(tokenFile, []byte("too-short\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("SOC_HOST", "")
-	t.Setenv("SOC_PORT", "")
-	t.Setenv("SOC_DB_PATH", "")
-	t.Setenv("SOC_TLS_CERT_FILE", "")
-	t.Setenv("SOC_TLS_KEY_FILE", "")
-	t.Setenv("SOC_CREDENTIAL_KEY_FILE", "")
-	t.Setenv("SOC_API_TOKEN_FILE", tokenFile)
-	t.Setenv("OLLAMA_URL", "")
-	t.Setenv("OLLAMA_MODEL", "")
-	t.Setenv("WAZUH_SOURCES_JSON", "")
-	t.Setenv("WAZUH_POLL_SECONDS", "")
-	t.Setenv("IRIS_BASE_URL", "")
-	t.Setenv("IRIS_API_KEY", "")
-	t.Setenv("IRIS_CASE_ID", "")
-	t.Setenv("SOC_TENANTS_JSON", "")
-	if _, err := LoadConfig(); err == nil {
-		t.Fatal("expected invalid saved token to be rejected")
-	}
-}
-
 func TestLoadConfigRequiresTLSForRemoteBind(t *testing.T) {
-	tokenFile := filepath.Join(t.TempDir(), "api-token")
-	loadConfigWithEnv(t, tokenFile, `{"token-a":"tenant-a"}`)
+	loadConfigWithEnv(t, `{"token-a":"tenant-a"}`)
 	t.Setenv("SOC_HOST", "0.0.0.0")
 	if _, err := LoadConfig(); err == nil {
 		t.Fatal("expected remote HTTP bind to require TLS")
@@ -130,8 +89,7 @@ func TestLoadConfigRequiresTLSForRemoteBind(t *testing.T) {
 }
 
 func TestLoadConfigRequiresTLSCertificateAndKeyTogether(t *testing.T) {
-	tokenFile := filepath.Join(t.TempDir(), "api-token")
-	loadConfigWithEnv(t, tokenFile, `{"token-a":"tenant-a"}`)
+	loadConfigWithEnv(t, `{"token-a":"tenant-a"}`)
 	t.Setenv("SOC_TLS_CERT_FILE", filepath.Join(t.TempDir(), "server.crt"))
 	if _, err := LoadConfig(); err == nil {
 		t.Fatal("expected unpaired TLS certificate to be rejected")

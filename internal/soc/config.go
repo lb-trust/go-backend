@@ -1,11 +1,9 @@
 package soc
 
 import (
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/url"
 	"os"
@@ -20,10 +18,9 @@ type Config struct {
 	DatabasePath      string
 	CredentialKeyFile string
 	Tenants           map[string]string
+	TenantIDs         []string
 	TLSCertFile       string
 	TLSKeyFile        string
-	GeneratedToken    string
-	TokenFilePath     string
 	OllamaURL         string
 	OllamaModel       string
 	IrisBaseURL       string
@@ -51,7 +48,8 @@ func LoadConfig() (Config, error) {
 		CredentialKeyFile: os.Getenv("SOC_CREDENTIAL_KEY_FILE"),
 		TLSCertFile:       os.Getenv("SOC_TLS_CERT_FILE"),
 		TLSKeyFile:        os.Getenv("SOC_TLS_KEY_FILE"),
-		TokenFilePath:     envOr("SOC_API_TOKEN_FILE", ".soc-api-token"),
+		Tenants:           make(map[string]string),
+		TenantIDs:         []string{"client-a"},
 		OllamaURL:         strings.TrimRight(envOr("OLLAMA_URL", "http://127.0.0.1:11434"), "/"),
 		OllamaModel:       envOr("OLLAMA_MODEL", "llama3.1"),
 		IrisBaseURL:       strings.TrimRight(os.Getenv("IRIS_BASE_URL"), "/"),
@@ -74,27 +72,23 @@ func LoadConfig() (Config, error) {
 	}
 	cfg.Port = port
 
-	if os.Getenv("SOC_TENANTS_JSON") == "" {
-		token, err := loadOrCreateAPIToken(cfg.TokenFilePath)
-		if err != nil {
-			return Config{}, fmt.Errorf("créer ou lire le jeton API: %w", err)
-		}
-		cfg.GeneratedToken = token
-		cfg.Tenants = map[string]string{token: "client-a"}
-	} else {
+	if os.Getenv("SOC_TENANTS_JSON") != "" {
 		if err := decodeEnvJSON("SOC_TENANTS_JSON", &cfg.Tenants, map[string]string{}); err != nil {
 			return Config{}, err
 		}
 		if len(cfg.Tenants) == 0 {
 			return Config{}, errors.New("SOC_TENANTS_JSON doit contenir au moins un jeton et un client")
 		}
+		cfg.TenantIDs = cfg.TenantIDs[:0]
 	}
 	for token, tenant := range cfg.Tenants {
 		if strings.TrimSpace(token) == "" || token != strings.TrimSpace(token) ||
 			strings.TrimSpace(tenant) == "" {
 			return Config{}, errors.New("les jetons et identifiants clients ne peuvent pas être vides")
 		}
+		cfg.TenantIDs = append(cfg.TenantIDs, tenant)
 	}
+	cfg.TenantIDs = uniqueStrings(cfg.TenantIDs)
 	if err := decodeEnvJSON("WAZUH_SOURCES_JSON", &cfg.WazuhSources, []WazuhSource{}); err != nil {
 		return Config{}, err
 	}
@@ -103,7 +97,7 @@ func LoadConfig() (Config, error) {
 		if source.TenantID == "" || source.URL == "" || source.Username == "" || source.Password == "" {
 			return Config{}, fmt.Errorf("WAZUH_SOURCES_JSON[%d] doit définir tenant_id, url, username et password", i)
 		}
-		if !tenantExists(cfg.Tenants, source.TenantID) {
+		if !tenantExists(cfg, source.TenantID) {
 			return Config{}, fmt.Errorf("WAZUH_SOURCES_JSON[%d] référence un tenant non configuré", i)
 		}
 		if source.AlertsIndex == "" {
@@ -198,8 +192,13 @@ func validateURL(raw string, requireHTTPS bool) error {
 	return nil
 }
 
-func tenantExists(tenants map[string]string, tenantID string) bool {
-	for _, id := range tenants {
+func tenantExists(config Config, tenantID string) bool {
+	for _, id := range config.TenantIDs {
+		if id == tenantID {
+			return true
+		}
+	}
+	for _, id := range config.Tenants {
 		if id == tenantID {
 			return true
 		}
@@ -207,78 +206,15 @@ func tenantExists(tenants map[string]string, tenantID string) bool {
 	return false
 }
 
-func loadOrCreateAPIToken(path string) (string, error) {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err == nil {
-		token, generateErr := generateAPIToken()
-		if generateErr != nil {
-			file.Close()
-			os.Remove(path)
-			return "", generateErr
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	unique := make([]string, 0, len(values))
+	for _, value := range values {
+		if _, exists := seen[value]; exists {
+			continue
 		}
-		if _, err := io.WriteString(file, token+"\n"); err != nil {
-			file.Close()
-			os.Remove(path)
-			return "", fmt.Errorf("enregistrer le jeton dans %q: %w", path, err)
-		}
-		if err := file.Sync(); err != nil {
-			file.Close()
-			return "", fmt.Errorf("synchroniser le jeton dans %q: %w", path, err)
-		}
-		if err := file.Close(); err != nil {
-			return "", fmt.Errorf("fermer le fichier du jeton %q: %w", path, err)
-		}
-		return token, nil
+		seen[value] = struct{}{}
+		unique = append(unique, value)
 	}
-	if !errors.Is(err, os.ErrExist) {
-		return "", fmt.Errorf("créer le fichier %q: %w", path, err)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("lire le fichier %q: %w", path, err)
-	}
-	token := strings.TrimSpace(string(data))
-	if !validAPIToken(token) {
-		return "", fmt.Errorf("le fichier %q doit contenir un jeton alphanumérique de 20 caractères; supprimez-le serveur arrêté pour en générer un nouveau", path)
-	}
-	return token, nil
-}
-
-func generateAPIToken() (string, error) {
-	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-	const sampleSpace = 256
-	const acceptedByteLimit = sampleSpace - sampleSpace%len(alphabet)
-	token := make([]byte, 20)
-	randomBytes := make([]byte, 64)
-	tokenIndex := 0
-	for tokenIndex < len(token) {
-		if _, err := rand.Read(randomBytes); err != nil {
-			return "", fmt.Errorf("générer les caractères du jeton: %w", err)
-		}
-		for _, value := range randomBytes {
-			if int(value) >= acceptedByteLimit {
-				continue
-			}
-			token[tokenIndex] = alphabet[int(value)%len(alphabet)]
-			tokenIndex++
-			if tokenIndex == len(token) {
-				break
-			}
-		}
-	}
-	return string(token), nil
-}
-
-func validAPIToken(token string) bool {
-	if len(token) != 20 {
-		return false
-	}
-	for _, character := range token {
-		if !('a' <= character && character <= 'z') &&
-			!('A' <= character && character <= 'Z') &&
-			!('0' <= character && character <= '9') {
-			return false
-		}
-	}
-	return true
+	return unique
 }

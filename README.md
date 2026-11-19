@@ -15,6 +15,17 @@ Lancez le service depuis la racine du dépôt :
 go run ./cmd/soc-backend
 ```
 
+Cette commande de développement écoute uniquement en local. Pour un accès
+depuis une autre machine, utilisez plutôt `bash ./start.sh` : au premier lancement,
+le script demande le nom DNS couvert par le certificat TLS, puis les chemins du
+certificat et de sa clé privée. Il écoute ensuite sur les interfaces réseau et
+mémorise ces chemins dans `.soc-network.env` (fichier local ignoré par Git).
+Il demande aussi un nom de service systemd et propose de créer et démarrer ce
+service sous le compte courant ; `sudo` est nécessaire pour l’installation.
+Le nom DNS doit pointer vers le serveur et figurer dans le certificat ; ouvrez
+`https://<nom-dns>:8080/` et autorisez le port dans le pare-feu uniquement pour
+le réseau de confiance.
+
 Ouvrez `http://127.0.0.1:8080/`. Lors du premier lancement, la page demande
 l’identifiant et le mot de passe du compte administrateur initial ; des aides
 « i » expliquent les règles de saisie. Le mot de passe doit contenir au moins
@@ -113,8 +124,8 @@ git clone https://github.com/lb-trust/go-backend.git && cd go-backend
 
 Depuis la racine du dépôt, renseignez l’URL, le compte Indexer en lecture seule
 et son mot de passe. Le mot de passe est demandé sans être affiché ni inscrit
-dans l’historique de commandes. Adaptez `client-a` si votre jeton utilise un
-autre `tenant_id` :
+dans l’historique de commandes. Utilisez `client-a` par défaut, ou l’un des
+tenants définis dans `SOC_TENANTS_JSON` si des intégrations API sont configurées :
 
 ```bash
 read -r -p "URL Wazuh Indexer (ex. https://indexer.example.lan:9200) : " WAZUH_URL
@@ -126,18 +137,25 @@ chmod +x ./start.sh
 ./start.sh
 ```
 
-Le script `start.sh` lance le backend avec `go run`. Il attend que Go soit
-disponible à `/usr/bin/go` et que le dépôt se trouve dans `/backend/go-backend`,
-chemin défini par sa commande `cd`. Si le dépôt se trouve ailleurs, modifiez
-cette ligne dans `start.sh` pour indiquer son chemin réel.
+Le script `start.sh` lance le backend avec `go run` depuis son propre
+répertoire. Il attend que Go soit disponible à `/usr/bin/go`. Lors de son
+premier lancement interactif, il demande le DNS, les chemins TLS et,
+facultativement, le chemin de la clé Wazuh ; il conserve ces paramètres dans
+`.soc-network.env` avec des permissions privées. Il demande ensuite le nom du
+service systemd et, par défaut, l’installe et le démarre. Le dépôt doit être
+dans un chemin sans espaces et le script doit être lancé par un compte normal,
+pas avec `sudo`.
+Après installation, consultez l’état avec
+`sudo systemctl status <nom>.service` et les journaux avec
+`sudo journalctl -u <nom>.service -f`. Si vous refusez la création du service,
+le backend reste lancé au premier plan dans le terminal.
 
-Configurez Wazuh et les autres options en exportant leurs variables dans le
-même terminal **avant** de lancer `./start.sh` : le script les transmet au
-backend. Les variables de l’exemple ci-dessus ne durent que pendant la session
-du terminal. Pour un lancement permanent, définissez-les dans le service
-`systemd` qui lance le script ou dans son fichier d’environnement, lisible
-uniquement par l’utilisateur du service. N’inscrivez pas les mots de passe ni
-les clés dans `start.sh` ou dans le dépôt.
+Pour les réglages optionnels qui doivent être transmis au service systemd,
+utilisez `.soc-service.env` à la racine du dépôt. Le service le charge au
+démarrage ; créez-le avec des permissions `600` et ne versionnez jamais ce
+fichier. Le chemin de la clé Wazuh est demandé par `start.sh` et conservé dans
+`.soc-network.env`. N’inscrivez pas les mots de passe ni les clés dans
+`start.sh` ou dans le dépôt.
 
 Laissez le terminal ouvert : le backend collecte automatiquement les alertes
 toutes les 60 secondes.
@@ -161,10 +179,10 @@ par défaut. Gardez cette fenêtre ouverte : la configuration définie avec
 automatique après redémarrage, fournissez les variables d’environnement au
 service ou au script qui démarre le backend.
 
-Après le démarrage, ouvrez `http://127.0.0.1:8080/` et utilisez le compte
-administrateur. Le jeton API généré reste réservé aux intégrations ; son chemin
-est indiqué dans les journaux et sa valeur est conservée dans le fichier local
-configuré par `SOC_API_TOKEN_FILE`.
+Après le démarrage, ouvrez `http://127.0.0.1:8080/` et connectez-vous avec le
+compte administrateur. Aucun jeton API n’est généré pour le dashboard ; les
+intégrations API peuvent en configurer un explicitement avec
+`SOC_TENANTS_JSON`.
 
 ### Vérifier la connexion et les alertes
 
@@ -229,8 +247,8 @@ go-backend/
 └── README.md
 ```
 
-`soc.db` et `.soc-api-token` sont créés au démarrage selon la configuration ;
-ce sont des fichiers locaux d’exécution, pas des sources du projet.
+`soc.db` est créé au démarrage selon la configuration ; c’est un fichier local
+d’exécution, pas une source du projet.
 
 ## Fonctionnalités
 
@@ -261,11 +279,10 @@ ce sont des fichiers locaux d’exécution, pas des sources du projet.
 | --- | --- | --- |
 | `WAZUH_SOURCES_JSON` | `[]` | Configuration de démarrage par environnement, utilisée si SQLite ne contient pas déjà de paramètres Wazuh. |
 | `WAZUH_POLL_SECONDS` | `60` | Période entre les contrôles ; minimum 15 secondes. |
-| `SOC_TENANTS_JSON` | client `client-a` généré | Objet JSON `jeton: tenant_id` pour configurer explicitement les clients et jetons. |
-| `SOC_API_TOKEN_FILE` | `.soc-api-token` | Fichier local contenant le jeton généré automatiquement. |
+| `SOC_TENANTS_JSON` | tenant `client-a`, sans jeton API | Objet JSON facultatif `jeton: tenant_id` pour les intégrations qui appellent l’API. |
 | `SOC_DB_PATH` | `soc.db` | Chemin de la base SQLite. |
 | `SOC_CREDENTIAL_KEY_FILE` | non défini | Fichier contenant la clé aléatoire de 32 octets qui chiffre le mot de passe Wazuh ; protège le fichier par des permissions réservées au compte du service. |
-| `SOC_HOST` / `SOC_PORT` | `127.0.0.1` / `8080` | Adresse et port du serveur HTTP. L’écoute est limitée à la machine par défaut. |
+| `SOC_HOST` / `SOC_PORT` | `127.0.0.1` / `8080` | Adresse et port du serveur HTTP. `go run` écoute localement ; `start.sh` configure `0.0.0.0` en HTTPS pour l’accès réseau. |
 | `SOC_TLS_CERT_FILE` / `SOC_TLS_KEY_FILE` | non définis | Certificat et clé PEM ; obligatoires ensemble pour écouter sur une adresse non locale. |
 | `OLLAMA_URL` | `http://127.0.0.1:11434` | Origine de l’API Ollama. |
 | `OLLAMA_MODEL` | `llama3.1` | Modèle utilisé pour l’analyse. |
@@ -278,7 +295,7 @@ contient :
 
 | Champ | Obligatoire | Signification |
 | --- | --- | --- |
-| `tenant_id` | oui | Client auquel rattacher les alertes ; doit correspondre à un client configuré. Avec le jeton généré par défaut, utilisez `client-a`. |
+| `tenant_id` | oui | Client auquel rattacher les alertes ; sans configuration API explicite, utilisez `client-a`. |
 | `url` | oui | Origine de Wazuh Indexer, par exemple `https://indexer.example.lan:9200`. |
 | `username`, `password` | oui | Compte Indexer en lecture seule. |
 | `verify_tls` | non | `true` par défaut ; conserve la vérification des certificats TLS. |
@@ -303,9 +320,10 @@ d’exposer le dashboard, par exemple depuis le serveur ou au moyen d’un tunne
 SSH. La création initiale du compte est limitée aux connexions locales. Un
 reverse proxy exécuté sur le serveur est vu comme local par le backend : ne
 l’exposez qu’après la création du compte. Pour une exposition distante,
-utilisez de préférence un reverse proxy HTTPS local. Une écoute sur une
-adresse non locale est refusée sans certificat et clé TLS configurés. Limitez
-aussi les sources autorisées avec un pare-feu.
+utilisez `./start.sh` avec un certificat TLS couvrant le nom DNS du serveur.
+Le script écoute sur toutes les interfaces réseau. Une écoute distante est
+refusée sans certificat et clé TLS configurés. Limitez aussi les sources
+autorisées avec un pare-feu.
 
 Le serveur utilise HTTP pour l’écoute locale par défaut. Toute écoute sur une
 adresse non locale utilise TLS avec `SOC_TLS_CERT_FILE` et `SOC_TLS_KEY_FILE`.
