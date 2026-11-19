@@ -8,7 +8,6 @@ import (
 	"crypto/subtle"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -53,30 +52,93 @@ func (e *invalidAccountError) Error() string {
 
 var errLastAdminAccount = errors.New("impossible de supprimer le dernier compte administrateur")
 var errInvalidCurrentPassword = errors.New("ancien mot de passe incorrect")
+var errInitialAdminAlreadyConfigured = errors.New("le compte administrateur initial est déjà configuré")
 
 func (b *Backend) initializeAccounts(ctx context.Context) error {
-	if _, err := b.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS soc_accounts (
+	_, err := b.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS soc_accounts (
 		username TEXT PRIMARY KEY,
 		password_hash TEXT NOT NULL,
 		role TEXT NOT NULL
-	)`); err != nil {
+	)`)
+	if err != nil {
 		return fmt.Errorf("créer la table des comptes: %w", err)
 	}
+	return nil
+}
+
+func (b *Backend) adminSetupRequired(ctx context.Context) (bool, error) {
 	var count int
 	if err := b.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM soc_accounts`).Scan(&count); err != nil {
-		return fmt.Errorf("compter les comptes: %w", err)
+		return false, fmt.Errorf("compter les comptes: %w", err)
 	}
-	if count > 0 {
-		return nil
+	if count == 0 {
+		return true, nil
 	}
-	passwordHash, err := hashPassword("admin")
+	var passwordHash string
+	err := b.db.QueryRowContext(ctx,
+		`SELECT password_hash FROM soc_accounts WHERE username = 'admin' AND role = 'admin'`).
+		Scan(&passwordHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("vérifier le compte admin initial: %w", err)
+	}
+	return verifyPassword("admin", passwordHash), nil
+}
+
+func (b *Backend) setupInitialAdmin(ctx context.Context, username, password string) error {
+	if !validAccountUsername(username) {
+		return &invalidAccountError{message: "l’identifiant doit contenir 3 à 64 caractères : lettres, chiffres, point, tiret ou souligné"}
+	}
+	if utf8.RuneCountInString(password) < 12 {
+		return &invalidAccountError{message: "le mot de passe doit contenir au moins 12 caractères"}
+	}
+	passwordHash, err := hashPassword(password)
 	if err != nil {
 		return fmt.Errorf("initialiser le mot de passe admin: %w", err)
 	}
-	if _, err := b.db.ExecContext(ctx,
-		`INSERT INTO soc_accounts(username, password_hash, role) VALUES('admin', ?, 'admin')`,
-		passwordHash); err != nil {
-		return fmt.Errorf("créer le compte admin initial: %w", err)
+	tx, err := b.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("démarrer la configuration du compte admin: %w", err)
+	}
+	defer tx.Rollback()
+
+	var count int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM soc_accounts`).Scan(&count); err != nil {
+		return fmt.Errorf("vérifier la configuration initiale: %w", err)
+	}
+	if count == 0 {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO soc_accounts(username, password_hash, role) VALUES(?, ?, 'admin')`,
+			username, passwordHash); err != nil {
+			return fmt.Errorf("créer le compte admin initial: %w", err)
+		}
+	} else {
+		var legacyHash string
+		err := tx.QueryRowContext(ctx,
+			`SELECT password_hash FROM soc_accounts WHERE username = 'admin' AND role = 'admin'`).
+			Scan(&legacyHash)
+		if errors.Is(err, sql.ErrNoRows) {
+			return errInitialAdminAlreadyConfigured
+		}
+		if err != nil {
+			return fmt.Errorf("vérifier le compte admin initial: %w", err)
+		}
+		if !verifyPassword("admin", legacyHash) {
+			return errInitialAdminAlreadyConfigured
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE soc_accounts SET username = ?, password_hash = ? WHERE username = 'admin' AND password_hash = ?`,
+			username, passwordHash, legacyHash); err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "unique") {
+				return &invalidAccountError{message: "cet identifiant existe déjà"}
+			}
+			return fmt.Errorf("remplacer le compte admin par défaut: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("valider la configuration initiale: %w", err)
 	}
 	return nil
 }
@@ -86,9 +148,19 @@ func (b *Backend) initializeWazuhConfiguration(ctx context.Context) error {
 	err := b.db.QueryRowContext(ctx,
 		`SELECT value FROM soc_settings WHERE key = 'wazuh_sources'`).Scan(&raw)
 	if err == nil {
-		var sources []WazuhSource
-		if err := json.Unmarshal([]byte(raw), &sources); err != nil {
-			return fmt.Errorf("décoder la configuration Wazuh sauvegardée: %w", err)
+		sources, migrated, err := b.decodeWazuhSources(raw)
+		if err != nil {
+			return fmt.Errorf("déchiffrer les identifiants Wazuh sauvegardés: %w", err)
+		}
+		if migrated {
+			encoded, err := b.encodeWazuhSources(sources)
+			if err != nil {
+				return fmt.Errorf("encoder la configuration Wazuh migrée: %w", err)
+			}
+			if _, err := b.db.ExecContext(ctx,
+				`UPDATE soc_settings SET value = ? WHERE key = 'wazuh_sources'`, string(encoded)); err != nil {
+				return fmt.Errorf("enregistrer la configuration Wazuh chiffrée: %w", err)
+			}
 		}
 		b.config.WazuhSources = sources
 		return nil
@@ -99,9 +171,9 @@ func (b *Backend) initializeWazuhConfiguration(ctx context.Context) error {
 	if b.config.WazuhSources == nil {
 		b.config.WazuhSources = []WazuhSource{}
 	}
-	encoded, err := json.Marshal(b.config.WazuhSources)
+	encoded, err := b.encodeWazuhSources(b.config.WazuhSources)
 	if err != nil {
-		return fmt.Errorf("encoder la configuration Wazuh initiale: %w", err)
+		return fmt.Errorf("chiffrer la configuration Wazuh initiale: %w", err)
 	}
 	if _, err := b.db.ExecContext(ctx,
 		`INSERT INTO soc_settings(key, value) VALUES('wazuh_sources', ?)`, string(encoded)); err != nil {
@@ -335,13 +407,20 @@ func (b *Backend) changePassword(username, currentPassword, newPassword string) 
 	if changed == 0 {
 		return sql.ErrNoRows
 	}
+	b.sessionMu.Lock()
+	for token, session := range b.sessions {
+		if session.Username == username {
+			delete(b.sessions, token)
+		}
+	}
+	b.sessionMu.Unlock()
 	return nil
 }
 
 func (b *Backend) setWazuhSources(ctx context.Context, sources []WazuhSource) error {
-	encoded, err := json.Marshal(sources)
+	encoded, err := b.encodeWazuhSources(sources)
 	if err != nil {
-		return fmt.Errorf("encoder la configuration Wazuh: %w", err)
+		return fmt.Errorf("chiffrer et encoder les identifiants Wazuh: %w", err)
 	}
 	if _, err := b.db.ExecContext(ctx,
 		`INSERT INTO soc_settings(key, value) VALUES('wazuh_sources', ?)
@@ -374,6 +453,15 @@ func (b *Backend) setWazuhSources(ctx context.Context, sources []WazuhSource) er
 }
 
 func (b *Backend) loginHandler(w http.ResponseWriter, r *http.Request) {
+	setupRequired, err := b.adminSetupRequired(r.Context())
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	if setupRequired {
+		writeError(w, http.StatusForbidden, "terminez la configuration initiale avant de vous connecter")
+		return
+	}
 	var payload struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -392,6 +480,50 @@ func (b *Backend) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"token": token, "expires_at": expiresAt})
+}
+
+func (b *Backend) setupStatusHandler(w http.ResponseWriter, r *http.Request) {
+	required, err := b.adminSetupRequired(r.Context())
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]bool{"required": required})
+}
+
+func (b *Backend) setupAdminHandler(w http.ResponseWriter, r *http.Request) {
+	if !isLoopbackRemoteAddr(r.RemoteAddr) {
+		writeError(w, http.StatusForbidden, "la configuration initiale doit être effectuée depuis le serveur ou un tunnel local")
+		return
+	}
+	var payload struct {
+		Username        string `json:"username"`
+		Password        string `json:"password"`
+		ConfirmPassword string `json:"confirm_password"`
+	}
+	if err := decodeBody(w, r, &payload); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if payload.Password != payload.ConfirmPassword {
+		writeError(w, http.StatusBadRequest, "les deux mots de passe ne correspondent pas")
+		return
+	}
+	if err := b.setupInitialAdmin(r.Context(), payload.Username, payload.Password); err != nil {
+		if errors.Is(err, errInitialAdminAlreadyConfigured) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		var validationError *invalidAccountError
+		if errors.As(err, &validationError) {
+			writeError(w, http.StatusBadRequest, validationError.Error())
+		} else {
+			writeInternalError(w, err)
+		}
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
 }
 
 func (b *Backend) adminOnly(next http.Handler) http.Handler {
@@ -562,6 +694,10 @@ func (b *Backend) wazuhConfigurationHandler(w http.ResponseWriter, r *http.Reque
 	}
 	if err := validateWazuhSource(source); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if source.Password != "" && len(b.credentialKey) != 32 {
+		writeError(w, http.StatusServiceUnavailable, errCredentialKeyRequired.Error())
 		return
 	}
 	if err := b.pollWazuh(r.Context(), source); err != nil {

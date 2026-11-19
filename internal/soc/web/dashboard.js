@@ -1,8 +1,10 @@
 "use strict";
 
 const tokenKey = "soc-admin-session";
+const setupPanel = document.querySelector("#setup-panel");
 const loginPanel = document.querySelector("#login-panel");
 const dashboard = document.querySelector("#dashboard");
+const setupForm = document.querySelector("#setup-form");
 const loginForm = document.querySelector("#login-form");
 const accountMenu = document.querySelector("#account-menu");
 const connectionState = document.querySelector("#connection-state");
@@ -98,6 +100,7 @@ function api(path, options = {}) {
 
 function setConnected(connected) {
   const wasConnected = !dashboard.hidden;
+  setupPanel.hidden = true;
   loginPanel.hidden = connected;
   dashboard.hidden = !connected;
   accountMenu.hidden = !connected;
@@ -564,6 +567,39 @@ document.addEventListener("click", (event) => {
   if (!accountMenu.contains(event.target)) accountMenu.open = false;
 });
 
+setupForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const errorMessage = document.querySelector("#setup-error");
+  const button = setupForm.querySelector("button[type=submit]");
+  errorMessage.textContent = "";
+  button.disabled = true;
+  const username = document.querySelector("#setup-username").value.trim();
+  try {
+    const response = await fetch("/api/setup/admin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username,
+        password: document.querySelector("#setup-password").value,
+        confirm_password: document.querySelector("#setup-confirm-password").value,
+      }),
+    });
+    const result = response.status === 201 ? {} : await response.json();
+    if (!response.ok) throw new Error(result.error || `Erreur HTTP ${response.status}`);
+    setupPanel.hidden = true;
+    loginPanel.hidden = false;
+    document.querySelector("#username").value = username;
+    document.querySelector("#login-error").textContent =
+      "Compte créé. Connectez-vous avec le mot de passe que vous venez de définir.";
+    setupForm.reset();
+    document.querySelector("#password").focus();
+  } catch (error) {
+    errorMessage.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
 loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const errorMessage = document.querySelector("#login-error");
@@ -688,6 +724,29 @@ document.querySelector("#delete-incident").addEventListener("click", async (even
   }
 });
 
-if (sessionStorage.getItem(tokenKey)) {
-  refreshDashboard();
+async function initializeDashboard() {
+  const loginError = document.querySelector("#login-error");
+  if (sessionStorage.getItem("soc-password-changed")) {
+    sessionStorage.removeItem("soc-password-changed");
+    loginError.textContent = "Mot de passe modifié. Reconnectez-vous.";
+  }
+  try {
+    const response = await fetch("/api/setup/status", { cache: "no-store" });
+    const status = await response.json();
+    if (!response.ok) throw new Error(status.error || `Erreur HTTP ${response.status}`);
+    if (status.required) {
+      sessionStorage.removeItem(tokenKey);
+      setupPanel.hidden = false;
+      loginPanel.hidden = true;
+      return;
+    }
+    setupPanel.hidden = true;
+    loginPanel.hidden = false;
+    if (sessionStorage.getItem(tokenKey)) refreshDashboard();
+  } catch (error) {
+    loginPanel.hidden = false;
+    loginError.textContent = error.message;
+  }
 }
+
+initializeDashboard();

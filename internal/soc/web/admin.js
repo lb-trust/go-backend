@@ -122,14 +122,13 @@ if (createAccountForm) {
   });
 
   const changePasswordForm = document.querySelector("#change-password-form");
-  const validateChangePassword = bindPasswordConfirmation(
+  bindPasswordConfirmation(
     document.querySelector("#new-account-password"),
     document.querySelector("#confirm-account-password"),
     document.querySelector("#change-password-mismatch"),
   );
   changePasswordForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const form = event.currentTarget;
     const message = document.querySelector("#password-message");
     try {
       await adminAPI("/api/admin/password", {
@@ -140,9 +139,9 @@ if (createAccountForm) {
           confirm_new_password: document.querySelector("#confirm-account-password").value,
         }),
       });
-      form.reset();
-      validateChangePassword();
-      showMessage(message, "Mot de passe modifié.", true);
+      sessionStorage.setItem("soc-password-changed", "true");
+      sessionStorage.removeItem(sessionKey);
+      window.location.replace("/");
     } catch (error) {
       showMessage(message, error.message);
     }

@@ -30,7 +30,32 @@
       </div>
     </header>
 
-    <section class="panel login-panel" id="login-panel">
+    <section class="panel login-panel" id="setup-panel" hidden>
+      <h2>Configuration initiale</h2>
+      <p>Créez le compte administrateur avant d’utiliser la console.</p>
+      <form id="setup-form" class="login-form">
+        <label for="setup-username">Identifiant
+          <details class="help-tip">
+            <summary aria-label="Aide sur l’identifiant administrateur">i</summary>
+            <span class="help-content" role="note">Choisissez l’identifiant du compte administrateur initial. Il doit contenir 3 à 64 caractères : lettres, chiffres, point, tiret ou souligné.</span>
+          </details>
+        </label>
+        <input id="setup-username" name="username" autocomplete="username" minlength="3" maxlength="64" required>
+        <label for="setup-password">Mot de passe
+          <details class="help-tip">
+            <summary aria-label="Aide sur le mot de passe administrateur">i</summary>
+            <span class="help-content" role="note">Choisissez un mot de passe unique d’au moins 12 caractères. Évitez les mots de passe réutilisés et conservez-le dans un gestionnaire de mots de passe.</span>
+          </details>
+        </label>
+        <input id="setup-password" name="password" type="password" autocomplete="new-password" minlength="12" required>
+        <label for="setup-confirm-password">Confirmer le mot de passe</label>
+        <input id="setup-confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="12" required>
+        <button type="submit">Créer le compte administrateur</button>
+      </form>
+      <p class="message" id="setup-error" role="status"></p>
+    </section>
+
+    <section class="panel login-panel" id="login-panel" hidden>
       <h2>Connexion</h2>
       <p>Connectez-vous avec un compte administrateur.</p>
       <form id="login-form" class="login-form">

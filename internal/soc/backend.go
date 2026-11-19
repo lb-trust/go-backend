@@ -48,6 +48,7 @@ var errInvalidIncidentStatus = errors.New("status doit être open, investigating
 type Backend struct {
 	config           Config
 	db               *sql.DB
+	credentialKey    []byte
 	httpClient       *http.Client
 	workers          sync.WaitGroup
 	wazuhStatusMu    sync.RWMutex
@@ -129,6 +130,13 @@ func NewBackend(cfg Config) (*Backend, error) {
 		wazuhStatuses:    make(map[string]WazuhSourceStatus),
 		collectorUpdates: make(chan []WazuhSource, 1),
 		sessions:         make(map[string]adminSession),
+	}
+	if cfg.CredentialKeyFile != "" {
+		backend.credentialKey, err = loadCredentialKey(cfg.CredentialKeyFile)
+		if err != nil {
+			db.Close()
+			return nil, err
+		}
 	}
 	if _, err := db.Exec(`PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;`); err != nil {
 		db.Close()

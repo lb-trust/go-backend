@@ -15,11 +15,16 @@ Lancez le service depuis la racine du dépôt :
 go run ./cmd/soc-backend
 ```
 
-Ouvrez `http://127.0.0.1:8080/` et connectez-vous avec le compte initial
-`admin` / `admin`. Depuis le menu **Configuration**, gérez les comptes ou
-ouvrez **Configuration Wazuh** pour saisir l’URL de l’Indexer, le compte en
-lecture seule et son mot de passe. Le service teste la connexion avant
-d’enregistrer les réglages dans SQLite ; la collecte démarre sans redémarrage.
+Ouvrez `http://127.0.0.1:8080/`. Lors du premier lancement, la page demande
+l’identifiant et le mot de passe du compte administrateur initial ; des aides
+« i » expliquent les règles de saisie. Le mot de passe doit contenir au moins
+12 caractères. Sur une base existante déjà configurée, la page de connexion
+reste affichée. Depuis **Configuration**, gérez ensuite les comptes ou ouvrez
+**Configuration Wazuh** pour saisir l’URL de l’Indexer, le compte en lecture
+seule et son mot de passe. Le service teste la connexion avant d’enregistrer
+les réglages dans SQLite ; la collecte démarre sans redémarrage.
+Configurez auparavant le fichier de clé `SOC_CREDENTIAL_KEY_FILE` décrit dans
+la section **Accès réseau et sécurité**.
 Si le certificat TLS de l’Indexer n’est pas reconnu, l’option **Ignorer les
 erreurs du certificat TLS** permet de tester la connexion, mais réduit sa
 sécurité. Préférez installer l’autorité de certification appropriée.
@@ -33,8 +38,9 @@ des alertes de cette source : ils ne nécessitent pas de configuration séparée
 
 Pour modifier un mot de passe, fournissez l’ancien, puis saisissez deux fois
 le nouveau (12 caractères minimum). La session web expire après 8 heures et est
-réinitialisée au redémarrage du service. La gestion disponible pour le moment
-concerne les comptes administrateurs.
+réinitialisée au redémarrage du service. Le changement de mot de passe révoque
+toutes les sessions et demande une nouvelle connexion. La gestion disponible
+pour le moment concerne les comptes administrateurs.
 
 Les comptes et réglages restent dans la base SQLite locale. Par défaut, elle
 s’appelle `soc.db` dans le répertoire courant et n’est pas versionnée par Git.
@@ -49,10 +55,11 @@ export SOC_DB_PATH="$HOME/.local/share/go-backend/soc.db"
 Définissez `SOC_DB_PATH` de la même façon dans l’environnement du service
 `systemd` pour qu’il retrouve la base après chaque redémarrage. Le compte
 exécutant le service doit pouvoir écrire dans le répertoire. Les mots de passe
-des comptes sont hachés ; les identifiants Wazuh sont enregistrés dans la base
-locale. Protégez ce fichier et l’accès au compte système du service. Le compte
-initial `admin:admin` est volontairement conservé : changez son mot de passe
-dès que possible depuis **Gestion des comptes**.
+des comptes sont hachés ; le mot de passe Wazuh est chiffré avec une clé externe
+configurée par `SOC_CREDENTIAL_KEY_FILE`. Protégez la base et la clé. Le compte
+initial n’a plus de mot de passe public par défaut. Si une ancienne base
+contient encore le compte `admin` avec le mot de passe `admin`, le tableau de
+bord impose la configuration du nouveau compte avant d’autoriser la connexion.
 
 #### Mise à jour depuis une version qui suivait `cmd/soc-backend/soc.db`
 
@@ -257,7 +264,9 @@ ce sont des fichiers locaux d’exécution, pas des sources du projet.
 | `SOC_TENANTS_JSON` | client `client-a` généré | Objet JSON `jeton: tenant_id` pour configurer explicitement les clients et jetons. |
 | `SOC_API_TOKEN_FILE` | `.soc-api-token` | Fichier local contenant le jeton généré automatiquement. |
 | `SOC_DB_PATH` | `soc.db` | Chemin de la base SQLite. |
-| `SOC_HOST` / `SOC_PORT` | `0.0.0.0` / `8080` | Adresse et port du serveur HTTP. Utilisez `127.0.0.1` pour limiter l’accès à la machine. |
+| `SOC_CREDENTIAL_KEY_FILE` | non défini | Fichier contenant la clé aléatoire de 32 octets qui chiffre le mot de passe Wazuh ; protège le fichier par des permissions réservées au compte du service. |
+| `SOC_HOST` / `SOC_PORT` | `127.0.0.1` / `8080` | Adresse et port du serveur HTTP. L’écoute est limitée à la machine par défaut. |
+| `SOC_TLS_CERT_FILE` / `SOC_TLS_KEY_FILE` | non définis | Certificat et clé PEM ; obligatoires ensemble pour écouter sur une adresse non locale. |
 | `OLLAMA_URL` | `http://127.0.0.1:11434` | Origine de l’API Ollama. |
 | `OLLAMA_MODEL` | `llama3.1` | Modèle utilisé pour l’analyse. |
 | `IRIS_BASE_URL` | désactivé | Origine HTTPS IRIS, sans chemin final. |
@@ -288,16 +297,41 @@ locaux avec un certificat non approuvé.
 
 ## Accès réseau et sécurité
 
-Par défaut, le serveur écoute sur `0.0.0.0:8080` et affiche les URL du dashboard
-disponibles. Depuis un autre poste, ouvrez `http://<IP_DU_SERVEUR>:8080/`.
-Autorisez le port TCP 8080 dans le pare-feu uniquement sur le réseau de
-confiance nécessaire.
+Par défaut, le serveur écoute sur `127.0.0.1:8080` ; seul le serveur local peut
+accéder directement au dashboard. Effectuez la configuration initiale avant
+d’exposer le dashboard, par exemple depuis le serveur ou au moyen d’un tunnel
+SSH. La création initiale du compte est limitée aux connexions locales. Un
+reverse proxy exécuté sur le serveur est vu comme local par le backend : ne
+l’exposez qu’après la création du compte. Pour une exposition distante,
+utilisez de préférence un reverse proxy HTTPS local. Une écoute sur une
+adresse non locale est refusée sans certificat et clé TLS configurés. Limitez
+aussi les sources autorisées avec un pare-feu.
 
-Le serveur utilise HTTP sans chiffrement. Ne l’exposez pas directement à
-Internet ; utilisez un reverse proxy HTTPS et un pare-feu pour les accès
-distants. Utilisez un compte Wazuh en lecture seule. Son mot de passe est
-conservé sans chiffrement dans SQLite : limitez l’accès au fichier et protégez
-ses sauvegardes. Pour IRIS, gardez la clé API dans l’environnement ou un
+Le serveur utilise HTTP pour l’écoute locale par défaut. Toute écoute sur une
+adresse non locale utilise TLS avec `SOC_TLS_CERT_FILE` et `SOC_TLS_KEY_FILE`.
+Utilisez un compte Wazuh en lecture seule. Son mot de passe est chiffré dans
+SQLite avec AES-GCM ; `SOC_CREDENTIAL_KEY_FILE` doit désigner un fichier
+contenant exactement 32 octets aléatoires, lisible uniquement par le compte du
+service. Par exemple, créez la clé sous un compte qui peut ensuite la rendre
+accessible au service :
+
+```bash
+umask 077
+mkdir -p "$HOME/.config/go-backend"
+chmod 700 "$HOME/.config/go-backend"
+openssl rand -out "$HOME/.config/go-backend/wazuh.key" 32
+chmod 600 "$HOME/.config/go-backend/wazuh.key"
+export SOC_CREDENTIAL_KEY_FILE="$HOME/.config/go-backend/wazuh.key"
+```
+
+Exécutez ces commandes avec le compte du service, ou donnez-lui ensuite la
+propriété du fichier et du répertoire. Définissez également ce chemin dans
+l’environnement `systemd`. Sauvegardez la clé séparément de la base : sans
+elle, le backend ne peut pas déchiffrer les identifiants Wazuh et refuse de
+démarrer. Les anciens mots de passe en clair sont chiffrés automatiquement au
+démarrage lorsque la clé est configurée ; protégez ou supprimez aussi les
+anciennes sauvegardes qui peuvent encore contenir ces mots de passe. Pour IRIS,
+gardez la clé API dans l’environnement ou un
 gestionnaire de secrets, jamais dans le dépôt.
 
 Pour un exemple détaillé de déploiement avec Nginx et TLS sur Debian 13, voir
@@ -308,11 +342,15 @@ Pour un exemple détaillé de déploiement avec Nginx et TLS sur Debian 13, voir
 Les intégrations continuent d’utiliser
 `Authorization: Bearer <jeton API>`. Le dashboard utilise un jeton de session
 obtenu à la connexion, conservé en mémoire par le serveur et invalidé à son
-redémarrage. Les routes `/api/admin/...` sont réservées aux sessions admin.
+redémarrage. Les jetons d’intégration servent à ingérer des alertes et à
+consulter les données autorisées ; les modifications d’incidents, le contrôle
+IA et les routes `/api/admin/...` nécessitent une session administrateur.
 
 | Méthode et route | Usage |
 | --- | --- |
 | `GET /health` | Santé du service, sans authentification. |
+| `GET /api/setup/status` | Indique si la création initiale du compte administrateur est nécessaire. |
+| `POST /api/setup/admin` | Créer le premier compte admin ou remplacer l’ancien compte par défaut ; utilisable une seule fois. |
 | `POST /api/auth/login` | Connexion par identifiant et mot de passe ; retourne une session. |
 | `POST /api/auth/logout` | Révoquer la session courante. |
 | `GET /api/auth/me` | Compte associé à la session. |

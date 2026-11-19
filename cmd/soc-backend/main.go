@@ -53,12 +53,20 @@ func run() error {
 	serverDone := make(chan error, 1)
 	go func() {
 		log.Printf("Backend SOC à l'écoute sur %s", server.Addr)
-		if config.Host == "0.0.0.0" || config.Host == "::" {
-			logAccessURLs(config.Port)
-		} else {
-			log.Printf("Tableau de bord : http://%s/", server.Addr)
+		scheme := "http"
+		listenAndServe := server.ListenAndServe
+		if config.TLSCertFile != "" {
+			scheme = "https"
+			listenAndServe = func() error {
+				return server.ListenAndServeTLS(config.TLSCertFile, config.TLSKeyFile)
+			}
 		}
-		serverDone <- server.ListenAndServe()
+		if config.Host == "0.0.0.0" || config.Host == "::" {
+			logAccessURLs(config.Port, scheme)
+		} else {
+			log.Printf("Tableau de bord : %s://%s/", scheme, server.Addr)
+		}
+		serverDone <- listenAndServe()
 	}()
 
 	select {
@@ -76,7 +84,7 @@ func run() error {
 	return nil
 }
 
-func logAccessURLs(port int) {
+func logAccessURLs(port int, scheme string) {
 	addresses, err := net.InterfaceAddrs()
 	if err != nil {
 		log.Printf("impossible de détecter les adresses réseau : %v", err)
@@ -95,7 +103,7 @@ func logAccessURLs(port int) {
 		if ip == nil || ip.IsLoopback() || ip.To4() == nil {
 			continue
 		}
-		log.Printf("Tableau de bord (réseau) : http://%s:%d/", ip.String(), port)
+		log.Printf("Tableau de bord (réseau) : %s://%s:%d/", scheme, ip.String(), port)
 		found = true
 	}
 	if !found {

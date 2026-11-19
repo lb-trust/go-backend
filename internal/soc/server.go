@@ -21,6 +21,8 @@ func (b *Backend) Handler() http.Handler {
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	mux.HandleFunc("GET /api/setup/status", b.setupStatusHandler)
+	mux.HandleFunc("POST /api/setup/admin", b.setupAdminHandler)
 	mux.HandleFunc("POST /api/auth/login", b.loginHandler)
 	mux.HandleFunc("POST /api/auth/logout", b.logoutHandler)
 	mux.Handle("GET /api/auth/me", b.authenticate(http.HandlerFunc(b.currentAccountHandler)))
@@ -34,17 +36,17 @@ func (b *Backend) Handler() http.Handler {
 	mux.Handle("GET /api/dashboard", b.authenticate(http.HandlerFunc(b.dashboardHandler)))
 	mux.Handle("GET /api/control/ai", b.authenticate(http.HandlerFunc(b.aiControlHandler)))
 	mux.Handle("GET /api/wazuh/status", b.authenticate(http.HandlerFunc(b.wazuhStatusHandler)))
-	mux.Handle("PATCH /api/control/ai", b.authenticate(http.HandlerFunc(b.setAIControlHandler)))
-	mux.Handle("POST /api/incidents/{id}/queue", b.authenticate(http.HandlerFunc(b.queueIncidentHandler)))
-	mux.Handle("DELETE /api/incidents/{id}/queue", b.authenticate(http.HandlerFunc(b.removeQueuedIncidentHandler)))
+	mux.Handle("PATCH /api/control/ai", b.authenticateAdminRequest(http.HandlerFunc(b.setAIControlHandler)))
+	mux.Handle("POST /api/incidents/{id}/queue", b.authenticateAdminRequest(http.HandlerFunc(b.queueIncidentHandler)))
+	mux.Handle("DELETE /api/incidents/{id}/queue", b.authenticateAdminRequest(http.HandlerFunc(b.removeQueuedIncidentHandler)))
 	mux.Handle("GET /api/clients", b.authenticate(http.HandlerFunc(b.listClientsHandler)))
 	mux.Handle("GET /api/alerts", b.authenticate(http.HandlerFunc(b.listAlertsHandler)))
 	mux.Handle("POST /api/alerts", b.authenticate(http.HandlerFunc(b.ingestAlertHandler)))
 	mux.Handle("GET /api/incidents", b.authenticate(http.HandlerFunc(b.listIncidentsHandler)))
 	mux.Handle("GET /api/incidents/{id}", b.authenticate(http.HandlerFunc(b.getIncidentHandler)))
-	mux.Handle("PATCH /api/incidents/{id}", b.authenticate(http.HandlerFunc(b.updateIncidentHandler)))
-	mux.Handle("DELETE /api/incidents/{id}", b.authenticate(http.HandlerFunc(b.deleteIncidentHandler)))
-	mux.Handle("POST /api/incidents/{id}/analyze", b.authenticate(http.HandlerFunc(b.analyzeIncidentHandler)))
+	mux.Handle("PATCH /api/incidents/{id}", b.authenticateAdminRequest(http.HandlerFunc(b.updateIncidentHandler)))
+	mux.Handle("DELETE /api/incidents/{id}", b.authenticateAdminRequest(http.HandlerFunc(b.deleteIncidentHandler)))
+	mux.Handle("POST /api/incidents/{id}/analyze", b.authenticateAdminRequest(http.HandlerFunc(b.analyzeIncidentHandler)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if recovered := recover(); recovered != nil {

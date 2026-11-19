@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
@@ -17,7 +18,10 @@ type Config struct {
 	Host              string
 	Port              int
 	DatabasePath      string
+	CredentialKeyFile string
 	Tenants           map[string]string
+	TLSCertFile       string
+	TLSKeyFile        string
 	GeneratedToken    string
 	TokenFilePath     string
 	OllamaURL         string
@@ -41,9 +45,12 @@ type WazuhSource struct {
 
 func LoadConfig() (Config, error) {
 	cfg := Config{
-		Host:              envOr("SOC_HOST", "0.0.0.0"),
+		Host:              envOr("SOC_HOST", "127.0.0.1"),
 		Port:              8080,
 		DatabasePath:      envOr("SOC_DB_PATH", "soc.db"),
+		CredentialKeyFile: os.Getenv("SOC_CREDENTIAL_KEY_FILE"),
+		TLSCertFile:       os.Getenv("SOC_TLS_CERT_FILE"),
+		TLSKeyFile:        os.Getenv("SOC_TLS_KEY_FILE"),
 		TokenFilePath:     envOr("SOC_API_TOKEN_FILE", ".soc-api-token"),
 		OllamaURL:         strings.TrimRight(envOr("OLLAMA_URL", "http://127.0.0.1:11434"), "/"),
 		OllamaModel:       envOr("OLLAMA_MODEL", "llama3.1"),
@@ -53,6 +60,12 @@ func LoadConfig() (Config, error) {
 	}
 	if err := validateURL(cfg.OllamaURL, false); err != nil {
 		return Config{}, fmt.Errorf("OLLAMA_URL invalide: %w", err)
+	}
+	if (cfg.TLSCertFile == "") != (cfg.TLSKeyFile == "") {
+		return Config{}, errors.New("SOC_TLS_CERT_FILE et SOC_TLS_KEY_FILE doivent être définis ensemble")
+	}
+	if !isLoopbackHost(cfg.Host) && cfg.TLSCertFile == "" {
+		return Config{}, errors.New("une écoute réseau non locale exige SOC_TLS_CERT_FILE et SOC_TLS_KEY_FILE")
 	}
 
 	port, err := strconv.Atoi(envOr("SOC_PORT", "8080"))
@@ -156,6 +169,19 @@ func envOr(name, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func isLoopbackRemoteAddr(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	return err == nil && isLoopbackHost(host)
 }
 
 func validateURL(raw string, requireHTTPS bool) error {
