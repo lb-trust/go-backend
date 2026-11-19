@@ -5,12 +5,20 @@ cd "$(dirname "$0")"
 config_file=".soc-network.env"
 config_tmp=""
 unit_tmp=""
+tls_cert_tmp=""
+tls_key_tmp=""
 cleanup() {
   if [[ -n "$config_tmp" ]]; then
     rm -f -- "$config_tmp"
   fi
   if [[ -n "$unit_tmp" ]]; then
     rm -f -- "$unit_tmp"
+  fi
+  if [[ -n "$tls_cert_tmp" ]]; then
+    rm -f -- "$tls_cert_tmp"
+  fi
+  if [[ -n "$tls_key_tmp" ]]; then
+    rm -f -- "$tls_key_tmp"
   fi
 }
 trap cleanup EXIT
@@ -37,16 +45,7 @@ else
   SOC_START_CREDENTIAL_KEY_FILE="${SOC_CREDENTIAL_KEY_FILE:-}"
 
   if [[ -z "$SOC_START_PUBLIC_HOST" ]]; then
-    read -r -p "Nom DNS couvert par le certificat (ex. soc.example.lan) : " SOC_START_PUBLIC_HOST
-  fi
-  if [[ -z "$SOC_START_TLS_CERT_FILE" ]]; then
-    read -r -p "Chemin du certificat TLS : " SOC_START_TLS_CERT_FILE
-  fi
-  if [[ -z "$SOC_START_TLS_KEY_FILE" ]]; then
-    read -r -p "Chemin de la clé privée TLS : " SOC_START_TLS_KEY_FILE
-  fi
-  if [[ -z "$SOC_START_CREDENTIAL_KEY_FILE" ]]; then
-    read -r -p "Clé Wazuh SOC_CREDENTIAL_KEY_FILE (Entrée si Wazuh n'est pas encore configuré) : " SOC_START_CREDENTIAL_KEY_FILE
+    read -r -p "Nom DNS du serveur (ex. soc.example.lan) : " SOC_START_PUBLIC_HOST
   fi
 
   if [[ ! "$SOC_START_PUBLIC_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ||
@@ -54,6 +53,73 @@ else
     echo "Le nom DNS est invalide." >&2
     exit 1
   fi
+
+  if [[ -z "$SOC_START_TLS_CERT_FILE" || -z "$SOC_START_TLS_KEY_FILE" ]]; then
+    echo "Choisissez un certificat TLS :"
+    echo "  1) Utiliser un certificat existant (Let's Encrypt ou autorité interne)"
+    echo "  2) Générer automatiquement un certificat auto-signé (simple, mais non approuvé par défaut)"
+    read -r -p "Choix [2] : " certificate_choice
+
+    case "${certificate_choice:-2}" in
+      1)
+        if [[ -z "$SOC_START_TLS_CERT_FILE" ]]; then
+          read -r -p "Chemin du certificat TLS : " SOC_START_TLS_CERT_FILE
+        fi
+        if [[ -z "$SOC_START_TLS_KEY_FILE" ]]; then
+          read -r -p "Chemin de la clé privée TLS : " SOC_START_TLS_KEY_FILE
+        fi
+        ;;
+      2)
+        if ! command -v openssl >/dev/null; then
+          echo "OpenSSL est requis pour générer le certificat. Installez-le puis relancez start.sh." >&2
+          exit 1
+        fi
+        tls_dir="$HOME/.config/go-backend/tls"
+        mkdir -p "$tls_dir"
+        chmod 700 "$tls_dir"
+        SOC_START_TLS_CERT_FILE="$tls_dir/server.crt"
+        SOC_START_TLS_KEY_FILE="$tls_dir/server.key"
+        if [[ -e "$SOC_START_TLS_CERT_FILE" || -e "$SOC_START_TLS_KEY_FILE" ]]; then
+          echo "Un certificat ou une clé existe déjà dans $tls_dir ; refus de l'écraser." >&2
+          exit 1
+        fi
+
+        tls_cert_tmp="$(mktemp "$tls_dir/.server.crt.XXXXXX")"
+        tls_key_tmp="$(mktemp "$tls_dir/.server.key.XXXXXX")"
+        certificate_san="DNS:$SOC_START_PUBLIC_HOST"
+        if [[ "$SOC_START_PUBLIC_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          certificate_san="IP:$SOC_START_PUBLIC_HOST"
+        fi
+        umask 077
+        if ! openssl req -x509 -newkey rsa:3072 -sha256 -nodes -days 365 \
+          -keyout "$tls_key_tmp" \
+          -out "$tls_cert_tmp" \
+          -subj "/CN=$SOC_START_PUBLIC_HOST" \
+          -addext "subjectAltName=$certificate_san"; then
+          echo "La génération du certificat TLS a échoué." >&2
+          exit 1
+        fi
+        chmod 600 "$tls_key_tmp"
+        chmod 644 "$tls_cert_tmp"
+        mv "$tls_key_tmp" "$SOC_START_TLS_KEY_FILE"
+        tls_key_tmp=""
+        mv "$tls_cert_tmp" "$SOC_START_TLS_CERT_FILE"
+        tls_cert_tmp=""
+        echo "Certificat auto-signé créé dans $tls_dir."
+        echo "Certificat : $SOC_START_TLS_CERT_FILE"
+        echo "Clé privée : $SOC_START_TLS_KEY_FILE"
+        ;;
+      *)
+        echo "Choix invalide ; utilisez 1 ou 2." >&2
+        exit 1
+        ;;
+    esac
+  fi
+
+  if [[ -z "$SOC_START_CREDENTIAL_KEY_FILE" ]]; then
+    read -r -p "Clé Wazuh SOC_CREDENTIAL_KEY_FILE (Entrée si Wazuh n'est pas encore configuré) : " SOC_START_CREDENTIAL_KEY_FILE
+  fi
+
   if [[ ! -f "$SOC_START_TLS_CERT_FILE" || ! -r "$SOC_START_TLS_CERT_FILE" ]]; then
     echo "Certificat introuvable ou illisible : $SOC_START_TLS_CERT_FILE" >&2
     exit 1

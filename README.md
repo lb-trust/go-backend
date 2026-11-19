@@ -7,41 +7,169 @@ configuré, les analyses automatiques qualifiées sont publiées dans sa timelin
 
 Le projet est distribué sous licence GPL-3.0 : voir [LICENSE](./LICENSE).
 
-## Premier démarrage et configuration graphique
+## Première installation sur Debian 13
 
-Lancez le service depuis la racine du dépôt :
+Pour la première installation, utilisez `start.sh` : c’est lui qui configure
+l’écoute HTTPS et peut installer le service systemd. `go run` est réservé au
+développement local.
+
+### 1. Préparer le serveur et le certificat HTTPS
+
+Installez Go 1.24 ou plus récent et Git, puis récupérez le dépôt :
 
 ```bash
-go run ./cmd/soc-backend
+sudo apt update
+sudo apt install -y git golang-go openssl
+go version
+git clone https://github.com/lb-trust/go-backend.git
+cd go-backend
 ```
 
-Cette commande de développement écoute uniquement en local. Pour un accès
-depuis une autre machine, utilisez plutôt `bash ./start.sh` : au premier lancement,
-le script demande le nom DNS couvert par le certificat TLS, puis les chemins du
-certificat et de sa clé privée. Il écoute ensuite sur les interfaces réseau et
-mémorise ces chemins dans `.soc-network.env` (fichier local ignoré par Git).
-Il demande aussi un nom de service systemd et propose de créer et démarrer ce
-service sous le compte courant ; `sudo` est nécessaire pour l’installation.
-Le nom DNS doit pointer vers le serveur et figurer dans le certificat ; ouvrez
-`https://<nom-dns>:8080/` et autorisez le port dans le pare-feu uniquement pour
-le réseau de confiance.
+Au premier lancement, `start.sh` propose deux choix :
 
-Ouvrez `http://127.0.0.1:8080/`. Lors du premier lancement, la page demande
-l’identifiant et le mot de passe du compte administrateur initial ; des aides
-« i » expliquent les règles de saisie. Le mot de passe doit contenir au moins
-12 caractères. Sur une base existante déjà configurée, la page de connexion
-reste affichée. Depuis **Configuration**, gérez ensuite les comptes ou ouvrez
-**Configuration Wazuh** pour saisir l’URL de l’Indexer, le compte en lecture
-seule et son mot de passe. Le service teste la connexion avant d’enregistrer
-les réglages dans SQLite ; la collecte démarre sans redémarrage.
-Configurez auparavant le fichier de clé `SOC_CREDENTIAL_KEY_FILE` décrit dans
-la section **Accès réseau et sécurité**.
-Si le certificat TLS de l’Indexer n’est pas reconnu, l’option **Ignorer les
-erreurs du certificat TLS** permet de tester la connexion, mais réduit sa
-sécurité. Préférez installer l’autorité de certification appropriée.
-Chaque champ de configuration Wazuh comporte une aide « i » avec des exemples
-et des commandes pour retrouver ou vérifier la valeur.
-Les groupes d’agents sont découverts à partir des alertes et affichés en ordre
+1. **Générer automatiquement un certificat auto-signé**. C'est le choix le
+   plus simple pour démarrer : aucune demande de certificat externe n'est
+   nécessaire. Le script le crée pour le nom saisi et le range dans
+   `~/.config/go-backend/tls/` (`server.crt` et `server.key`). Le certificat
+   est valable un an ; la clé privée est protégée et reste sur le serveur.
+   C'est le choix proposé par défaut dans `start.sh` (appuyez sur Entrée).
+   Les navigateurs ne font pas confiance à ce certificat par défaut et
+   afficheront un avertissement. Pour une utilisation régulière depuis un
+   autre poste, copiez uniquement `server.crt` vers ce poste et ajoutez-le à
+   ses certificats approuvés. Ne copiez jamais `server.key`.
+2. **Utiliser un certificat déjà émis**, recommandé pour un service durable
+   ou accessible à plusieurs personnes. Il faut obtenir un certificat TLS
+   délivré pour le nom DNS du serveur, ainsi que sa clé privée :
+
+   - **Serveur avec un nom DNS public** : vous pouvez obtenir gratuitement un
+     certificat de confiance avec Let's Encrypt. L'exemple ci-dessous utilise
+     le mode autonome, qui nécessite que le DNS public pointe vers ce serveur
+     et que le port 80 soit temporairement accessible et libre.
+
+     ```bash
+     sudo apt install -y certbot
+     sudo certbot certonly --standalone -d soc.example.com
+     ```
+
+     Certbot place alors les fichiers sous
+     `/etc/letsencrypt/live/soc.example.com/`. Remplacez `soc.example.com` par
+     votre vrai nom DNS. Si le port 80 ne peut pas être utilisé, choisissez une
+     autre méthode Certbot adaptée à votre réseau, par exemple la validation
+     DNS.
+   - **Serveur accessible uniquement sur le réseau privé** : demandez à
+     l'administrateur réseau un certificat et sa clé, ou faites-les émettre
+     par l'autorité de certification interne de votre organisation. Le
+     certificat doit couvrir le nom DNS utilisé par les postes clients.
+
+Pour récupérer le certificat public depuis un poste client, utilisez le chemin
+affiché par `start.sh` :
+
+```bash
+scp utilisateur@serveur:/home/leo/.config/go-backend/tls/server.crt .
+```
+
+Remplacez `utilisateur@serveur` et `/home/leo` par les valeurs de votre
+installation. Pour approuver le certificat sur un poste Linux, exécutez :
+
+```bash
+sudo install -m 644 server.crt /usr/local/share/ca-certificates/go-soc-backend.crt
+sudo update-ca-certificates
+```
+
+Sous Windows, exécutez `certutil -user -addstore Root server.crt` pour
+l'ajouter aux autorités racines de confiance de votre utilisateur. Après cette
+étape, accédez au dashboard avec le même nom DNS que celui saisi à
+l'installation. Si le certificat est remplacé, il faudra approuver le nouveau
+certificat sur les postes concernés.
+
+Si vous choisissez un certificat existant, rangez les fichiers hors du dépôt.
+Le service tourne sous votre compte utilisateur ; la clé privée doit donc
+être lisible par ce compte, mais pas par les autres. Pour l'exemple Let's
+Encrypt, copiez-les dans le répertoire privé du compte qui lancera `start.sh` :
+
+```bash
+TLS_DIR="$HOME/.config/go-backend/tls"
+sudo install -d -o "$USER" -g "$(id -gn)" -m 700 "$TLS_DIR"
+sudo install -o "$USER" -g "$(id -gn)" -m 644 \
+  /etc/letsencrypt/live/soc.example.com/fullchain.pem "$TLS_DIR/fullchain.pem"
+sudo install -o "$USER" -g "$(id -gn)" -m 600 \
+  /etc/letsencrypt/live/soc.example.com/privkey.pem "$TLS_DIR/privkey.pem"
+```
+
+À chaque renouvellement du certificat Let's Encrypt, mettez à jour ces deux
+copies et redémarrez le service. Ne placez jamais la clé privée dans le dépôt
+et ne la transmettez pas aux postes clients.
+
+### 2. Lancer `start.sh`
+
+Depuis la racine du dépôt, lancez le script avec votre compte normal (pas avec
+`sudo`) :
+
+```bash
+chmod +x ./start.sh
+./start.sh
+```
+
+Au premier lancement, le script demande le nom DNS, puis propose de générer
+un certificat auto-signé ou d'utiliser un certificat existant. Si vous
+choisissez le certificat auto-signé, il crée les fichiers automatiquement.
+Si vous choisissez un certificat existant, indiquez ses chemins, par exemple :
+
+```text
+Nom DNS : soc.example.com
+Certificat : /home/leo/.config/go-backend/tls/fullchain.pem
+Clé privée : /home/leo/.config/go-backend/tls/privkey.pem
+```
+
+Il mémorise ces réponses dans `.soc-network.env`, un fichier local ignoré par
+Git et protégé par des permissions privées. Il demande ensuite le nom du
+service systemd (défaut : `go-soc-backend`) et propose de l'installer et de le
+démarrer. Répondez oui pour un démarrage automatique après redémarrage ; `sudo`
+est alors utilisé uniquement pour installer le service. Le dépôt doit être
+dans un chemin sans espaces. Si vous refusez l'installation, le backend reste
+lancé au premier plan dans le terminal.
+
+Après le démarrage, ouvrez `https://soc.example.com:8080/`. Le nom DNS doit
+pointer vers le serveur et le pare-feu doit autoriser le port 8080 uniquement
+depuis le réseau de confiance. Pour vérifier le service :
+
+```bash
+sudo systemctl status go-soc-backend.service
+sudo journalctl -u go-soc-backend.service -f
+```
+
+Le premier compte administrateur ne peut être créé que depuis une connexion
+locale au serveur. Pour le créer depuis un autre poste, ouvrez un tunnel SSH :
+
+```bash
+ssh -L 8080:127.0.0.1:8080 utilisateur@serveur
+```
+
+Sur ce poste, faites temporairement résoudre le nom du certificat vers
+`127.0.0.1` en ajoutant cette ligne au fichier `hosts` :
+
+```text
+127.0.0.1 soc.example.com
+```
+
+Sous Linux, ce fichier est `/etc/hosts` ; sous Windows,
+`C:\Windows\System32\drivers\etc\hosts` (à modifier en administrateur).
+Ouvrez ensuite `https://soc.example.com:8080/`. Le nom correspond au
+certificat et le tunnel fournit la connexion locale requise pour créer le
+compte. Retirez l'entrée temporaire du fichier `hosts` ensuite ; l'accès
+normal se fait par le DNS du serveur.
+
+Lors de la première visite, créez le compte administrateur ; les aides « i »
+expliquent les règles de saisie. Le mot de passe doit contenir au moins
+12 caractères. Sur une base déjà configurée, la page de connexion s'affiche.
+Depuis **Configuration**, ouvrez **Configuration Wazuh** pour saisir l'URL de
+l'Indexer, le compte en lecture seule et son mot de passe. La connexion est
+testée avant l'enregistrement dans SQLite et la collecte démarre sans
+redémarrage. Avant d'enregistrer un mot de passe Wazuh, configurez sa clé de
+chiffrement comme décrit dans **Accès réseau et sécurité**. Chaque champ
+Wazuh comporte une aide « i » avec des exemples.
+
+Les groupes d'agents sont découverts à partir des alertes et affichés en ordre
 alphabétique dans les filtres du dashboard.
 
 L’interface configure une seule connexion Wazuh Indexer. Les groupes viennent
@@ -55,22 +183,28 @@ pour le moment concerne les comptes administrateurs.
 
 Les comptes et réglages restent dans la base SQLite locale. Par défaut, elle
 s’appelle `soc.db` dans le répertoire courant et n’est pas versionnée par Git.
-Pour que son emplacement reste stable, configurez de préférence un chemin absolu
-hors du dépôt, par exemple :
+Pour que son emplacement reste stable, créez un répertoire hors du dépôt :
 
 ```bash
 mkdir -p "$HOME/.local/share/go-backend"
-export SOC_DB_PATH="$HOME/.local/share/go-backend/soc.db"
+chmod 700 "$HOME/.local/share/go-backend"
 ```
 
-Définissez `SOC_DB_PATH` de la même façon dans l’environnement du service
-`systemd` pour qu’il retrouve la base après chaque redémarrage. Le compte
-exécutant le service doit pouvoir écrire dans le répertoire. Les mots de passe
-des comptes sont hachés ; le mot de passe Wazuh est chiffré avec une clé externe
-configurée par `SOC_CREDENTIAL_KEY_FILE`. Protégez la base et la clé. Le compte
-initial n’a plus de mot de passe public par défaut. Si une ancienne base
-contient encore le compte `admin` avec le mot de passe `admin`, le tableau de
-bord impose la configuration du nouveau compte avant d’autoriser la connexion.
+Pour le service systemd créé par `start.sh`, ajoutez dans `.soc-service.env`
+(à la racine du dépôt) une ligne avec le chemin absolu :
+
+```text
+SOC_DB_PATH=/home/leo/.local/share/go-backend/soc.db
+```
+
+Le service charge ce fichier au démarrage ; protégez-le avec `chmod 600`.
+Le compte exécutant le service doit pouvoir écrire dans le répertoire de la
+base. Les mots de passe des comptes sont hachés ; le mot de passe Wazuh est
+chiffré avec une clé externe configurée par `SOC_CREDENTIAL_KEY_FILE`.
+Protégez la base et la clé. Le compte initial n’a plus de mot de passe public
+par défaut. Si une ancienne base contient encore le compte `admin` avec le
+mot de passe `admin`, le tableau de bord impose la configuration du nouveau
+compte avant d’autoriser la connexion.
 
 #### Mise à jour depuis une version qui suivait `cmd/soc-backend/soc.db`
 
@@ -93,74 +227,32 @@ else
 fi
 ```
 
-Lancez ensuite le backend avec cette variable, et configurez-la également dans
-`systemd` si le service démarre automatiquement. La base continue ainsi d’être
-utilisée localement, tandis que les mises à jour Git ne la remplacent plus.
+Après cette migration, ajoutez `SOC_DB_PATH=/home/leo/.local/share/go-backend/soc.db`
+dans `.soc-service.env`, puis redémarrez le service. La base continue ainsi
+d’être utilisée localement, tandis que les mises à jour Git ne la remplacent
+plus.
 
 La connexion par jeton API reste disponible pour les intégrations et
 l’ingestion d’alertes ; elle n’est plus nécessaire pour ouvrir le dashboard.
 
-## Configuration manuelle (optionnelle)
+## Configuration Wazuh avancée (facultative)
 
 Le backend interroge **Wazuh Indexer** en lecture seule. Il doit pouvoir joindre
 son URL et utiliser un compte ayant accès en lecture à l’index d’alertes. Il ne
-se connecte pas directement à l’agent ni au manager Wazuh. Cette méthode par
-variables d’environnement est une alternative au formulaire graphique ; une
-configuration déjà enregistrée dans SQLite reste prioritaire au redémarrage.
+se connecte pas directement à l’agent ni au manager Wazuh. La méthode
+recommandée est de terminer la première installation avec `start.sh`, créer le
+compte administrateur, puis renseigner l’Indexer dans **Configuration >
+Configuration Wazuh**. Il n’est pas nécessaire de préparer des variables
+d’environnement pour un démarrage normal.
 
-### Debian (recommandé)
+Les anciennes installations peuvent encore utiliser `WAZUH_SOURCES_JSON` pour
+fournir la configuration Wazuh au démarrage. Pour le service systemd créé par
+`start.sh`, les variables persistantes doivent être définies dans
+`.soc-service.env` à la racine du dépôt. Ce fichier peut contenir des secrets :
+ne le versionnez jamais et limitez ses permissions à son propriétaire
+(`chmod 600 .soc-service.env`).
 
-Le projet nécessite Go 1.24 ou plus récent. Debian 13 est recommandé ; sur
-Debian 12, vérifiez que la version de Go installée est au moins 1.24 avec
-`go version`. Si ce n’est pas le cas, installez une version récente de Go avant
-de continuer.
-
-Installez les outils nécessaires et récupérez le dépôt :
-
-```bash
-sudo apt update && sudo apt install -y git golang-go python3 ca-certificates
-git clone https://github.com/lb-trust/go-backend.git && cd go-backend
-```
-
-Depuis la racine du dépôt, renseignez l’URL, le compte Indexer en lecture seule
-et son mot de passe. Le mot de passe est demandé sans être affiché ni inscrit
-dans l’historique de commandes. Utilisez `client-a` par défaut, ou l’un des
-tenants définis dans `SOC_TENANTS_JSON` si des intégrations API sont configurées :
-
-```bash
-read -r -p "URL Wazuh Indexer (ex. https://indexer.example.lan:9200) : " WAZUH_URL
-read -r -p "Utilisateur Indexer : " WAZUH_USER
-read -r -s -p "Mot de passe Indexer : " WAZUH_PASSWORD; printf '\n'
-export WAZUH_URL WAZUH_USER WAZUH_PASSWORD
-export WAZUH_SOURCES_JSON="$(python3 -c 'import json,os; print(json.dumps([{"tenant_id":"client-a","url":os.environ["WAZUH_URL"],"username":os.environ["WAZUH_USER"],"password":os.environ["WAZUH_PASSWORD"],"verify_tls":True,"alerts_index":"wazuh-alerts-*","batch_size":100}]))')"
-chmod +x ./start.sh
-./start.sh
-```
-
-Le script `start.sh` lance le backend avec `go run` depuis son propre
-répertoire. Il attend que Go soit disponible à `/usr/bin/go`. Lors de son
-premier lancement interactif, il demande le DNS, les chemins TLS et,
-facultativement, le chemin de la clé Wazuh ; il conserve ces paramètres dans
-`.soc-network.env` avec des permissions privées. Il demande ensuite le nom du
-service systemd et, par défaut, l’installe et le démarre. Le dépôt doit être
-dans un chemin sans espaces et le script doit être lancé par un compte normal,
-pas avec `sudo`.
-Après installation, consultez l’état avec
-`sudo systemctl status <nom>.service` et les journaux avec
-`sudo journalctl -u <nom>.service -f`. Si vous refusez la création du service,
-le backend reste lancé au premier plan dans le terminal.
-
-Pour les réglages optionnels qui doivent être transmis au service systemd,
-utilisez `.soc-service.env` à la racine du dépôt. Le service le charge au
-démarrage ; créez-le avec des permissions `600` et ne versionnez jamais ce
-fichier. Le chemin de la clé Wazuh est demandé par `start.sh` et conservé dans
-`.soc-network.env`. N’inscrivez pas les mots de passe ni les clés dans
-`start.sh` ou dans le dépôt.
-
-Laissez le terminal ouvert : le backend collecte automatiquement les alertes
-toutes les 60 secondes.
-
-### Windows (PowerShell)
+### Lancement local de développement sous Windows (PowerShell)
 
 Depuis la racine du dépôt, exécutez ce bloc dans le même terminal. Remplacez
 `https://INDEXER:9200` par l’URL joignable de votre Wazuh Indexer. La demande
@@ -175,9 +267,10 @@ go run .\cmd\soc-backend
 
 Le serveur démarre alors la collecte automatiquement, toutes les 60 secondes
 par défaut. Gardez cette fenêtre ouverte : la configuration définie avec
-`$env:` s’applique au processus lancé depuis ce terminal. Pour un lancement
-automatique après redémarrage, fournissez les variables d’environnement au
-service ou au script qui démarre le backend.
+`$env:` s’applique au processus lancé depuis ce terminal. Ce mode est destiné
+au développement local ; pour une première installation Debian ou un service
+accessible sur le réseau, suivez plutôt la procédure `start.sh` en haut de ce
+README.
 
 Après le démarrage, ouvrez `http://127.0.0.1:8080/` et connectez-vous avec le
 compte administrateur. Aucun jeton API n’est généré pour le dashboard ; les
@@ -339,18 +432,23 @@ mkdir -p "$HOME/.config/go-backend"
 chmod 700 "$HOME/.config/go-backend"
 openssl rand -out "$HOME/.config/go-backend/wazuh.key" 32
 chmod 600 "$HOME/.config/go-backend/wazuh.key"
-export SOC_CREDENTIAL_KEY_FILE="$HOME/.config/go-backend/wazuh.key"
 ```
 
-Exécutez ces commandes avec le compte du service, ou donnez-lui ensuite la
-propriété du fichier et du répertoire. Définissez également ce chemin dans
-l’environnement `systemd`. Sauvegardez la clé séparément de la base : sans
-elle, le backend ne peut pas déchiffrer les identifiants Wazuh et refuse de
-démarrer. Les anciens mots de passe en clair sont chiffrés automatiquement au
-démarrage lorsque la clé est configurée ; protégez ou supprimez aussi les
-anciennes sauvegardes qui peuvent encore contenir ces mots de passe. Pour IRIS,
-gardez la clé API dans l’environnement ou un
-gestionnaire de secrets, jamais dans le dépôt.
+Si cette clé est prête avant le premier démarrage, saisissez son chemin lorsque
+`start.sh` le demande. Sinon, ajoutez après sa création cette ligne dans
+`.soc-service.env`, puis redémarrez le service :
+
+```text
+SOC_CREDENTIAL_KEY_FILE=/home/leo/.config/go-backend/wazuh.key
+```
+
+Le compte du service doit pouvoir lire la clé. Sauvegardez-la séparément de la
+base : sans elle, le backend ne peut pas déchiffrer les identifiants Wazuh et
+refuse de démarrer. Les anciens mots de passe en clair sont chiffrés
+automatiquement au démarrage lorsque la clé est configurée ; protégez ou
+supprimez aussi les anciennes sauvegardes qui peuvent encore contenir ces mots
+de passe. Pour IRIS, gardez la clé API dans l’environnement ou un gestionnaire
+de secrets, jamais dans le dépôt.
 
 Pour un exemple détaillé de déploiement avec Nginx et TLS sur Debian 13, voir
 [SECURISER-HTTP-DEBIAN-13.md](./SECURISER-HTTP-DEBIAN-13.md).
