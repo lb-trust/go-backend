@@ -36,13 +36,48 @@ le nouveau (12 caractères minimum). La session web expire après 8 heures et es
 réinitialisée au redémarrage du service. La gestion disponible pour le moment
 concerne les comptes administrateurs.
 
-Les comptes et réglages restent dans `soc.db` (ou dans le chemin défini par
-`SOC_DB_PATH`). Utilisez le même répertoire de lancement ou définissez un chemin
-absolu pour retrouver la même base à chaque démarrage. Les mots de passe des
-comptes sont hachés ; les identifiants Wazuh sont enregistrés dans la base
-locale. Protégez ce fichier et l’accès au compte système du service. Le compte initial
-`admin:admin` est volontairement conservé : changez son mot de passe dès que
-possible depuis **Gestion des comptes**.
+Les comptes et réglages restent dans la base SQLite locale. Par défaut, elle
+s’appelle `soc.db` dans le répertoire courant et n’est pas versionnée par Git.
+Pour que son emplacement reste stable, configurez de préférence un chemin absolu
+hors du dépôt, par exemple :
+
+```bash
+mkdir -p "$HOME/.local/share/go-backend"
+export SOC_DB_PATH="$HOME/.local/share/go-backend/soc.db"
+```
+
+Définissez `SOC_DB_PATH` de la même façon dans l’environnement du service
+`systemd` pour qu’il retrouve la base après chaque redémarrage. Le compte
+exécutant le service doit pouvoir écrire dans le répertoire. Les mots de passe
+des comptes sont hachés ; les identifiants Wazuh sont enregistrés dans la base
+locale. Protégez ce fichier et l’accès au compte système du service. Le compte
+initial `admin:admin` est volontairement conservé : changez son mot de passe
+dès que possible depuis **Gestion des comptes**.
+
+#### Mise à jour depuis une version qui suivait `cmd/soc-backend/soc.db`
+
+Si `git pull` refuse la mise à jour parce que `cmd/soc-backend/soc.db` a été
+modifiée localement, arrêtez d’abord le backend. Sauvegardez la base hors du
+dépôt, puis restaurez uniquement la copie suivie par Git afin de permettre la
+mise à jour :
+
+```bash
+set -e
+mkdir -p "$HOME/.local/share/go-backend"
+DB_PATH="$HOME/.local/share/go-backend/soc.db"
+if [ -e "$DB_PATH" ]; then
+  echo "La base de destination existe déjà ; choisissez un autre chemin."
+else
+  cp -a cmd/soc-backend/soc.db "$DB_PATH"
+  git restore -- cmd/soc-backend/soc.db
+  git pull
+  export SOC_DB_PATH="$DB_PATH"
+fi
+```
+
+Lancez ensuite le backend avec cette variable, et configurez-la également dans
+`systemd` si le service démarre automatiquement. La base continue ainsi d’être
+utilisée localement, tandis que les mises à jour Git ne la remplacent plus.
 
 La connexion par jeton API reste disponible pour les intégrations et
 l’ingestion d’alertes ; elle n’est plus nécessaire pour ouvrir le dashboard.
