@@ -86,25 +86,26 @@ type Alert struct {
 }
 
 type Incident struct {
-	ID             string    `json:"id"`
-	TenantID       string    `json:"tenant_id"`
-	Title          string    `json:"title"`
-	Status         string    `json:"status"`
-	Severity       string    `json:"severity"`
-	Score          int       `json:"score"`
-	AgentID        string    `json:"agent_id,omitempty"`
-	AgentLabel     string    `json:"agent_name,omitempty"`
-	AgentIP        string    `json:"agent_ip,omitempty"`
-	AgentGroups    []string  `json:"agent_groups"`
-	SourceIP       string    `json:"source_ip,omitempty"`
-	RuleLevel      int       `json:"rule_level"`
-	PrimaryAlertID string    `json:"primary_alert_id"`
-	Occurrences    int       `json:"occurrences"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	Feedback       []string  `json:"feedback"`
-	Analysis       string    `json:"analysis,omitempty"`
-	Alerts         []Alert   `json:"alerts,omitempty"`
+	ID                     string      `json:"id"`
+	TenantID               string      `json:"tenant_id"`
+	Title                  string      `json:"title"`
+	Status                 string      `json:"status"`
+	Severity               string      `json:"severity"`
+	Score                  int         `json:"score"`
+	AgentID                string      `json:"agent_id,omitempty"`
+	AgentLabel             string      `json:"agent_name,omitempty"`
+	AgentIP                string      `json:"agent_ip,omitempty"`
+	AgentGroups            []string    `json:"agent_groups"`
+	SourceIP               string      `json:"source_ip,omitempty"`
+	RuleLevel              int         `json:"rule_level"`
+	PrimaryAlertID         string      `json:"primary_alert_id"`
+	Occurrences            int         `json:"occurrences"`
+	CreatedAt              time.Time   `json:"created_at"`
+	UpdatedAt              time.Time   `json:"updated_at"`
+	Feedback               []string    `json:"feedback"`
+	Analysis               string      `json:"analysis,omitempty"`
+	Alerts                 []Alert     `json:"alerts,omitempty"`
+	PrimaryOccurrenceTimes []time.Time `json:"primary_occurrence_times"`
 }
 
 type DatabaseStorageStats struct {
@@ -902,6 +903,33 @@ func (b *Backend) GetIncident(ctx context.Context, tenantID, id string) (Inciden
 	}
 	if err := rows.Close(); err != nil {
 		return Incident{}, fmt.Errorf("fermer les alertes liées à l'incident: %w", err)
+	}
+	incident.PrimaryOccurrenceTimes = []time.Time{}
+	if incident.PrimaryAlertID != "" {
+		rows, err = b.db.QueryContext(ctx,
+			`SELECT occurred_at FROM alert_events
+			 WHERE tenant_id = ? AND group_id = ?
+			 ORDER BY occurred_at, id`,
+			tenantID, incident.PrimaryAlertID)
+		if err != nil {
+			return Incident{}, fmt.Errorf("lister les heures des occurrences principales: %w", err)
+		}
+		for rows.Next() {
+			var occurredAt string
+			if err := rows.Scan(&occurredAt); err != nil {
+				rows.Close()
+				return Incident{}, fmt.Errorf("lire une heure d'occurrence principale: %w", err)
+			}
+			incident.PrimaryOccurrenceTimes = append(
+				incident.PrimaryOccurrenceTimes, parseStoredTime(occurredAt))
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return Incident{}, fmt.Errorf("parcourir les heures des occurrences principales: %w", err)
+		}
+		if err := rows.Close(); err != nil {
+			return Incident{}, fmt.Errorf("fermer les heures des occurrences principales: %w", err)
+		}
 	}
 	for _, alertID := range alertIDs {
 		alert, err := b.loadAlert(ctx, b.db, tenantID, alertID)

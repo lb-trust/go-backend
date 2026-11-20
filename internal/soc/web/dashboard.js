@@ -372,10 +372,20 @@ function setIncidentDetail(incident) {
     : "";
   document.querySelector("#view-primary-alert").hidden = !activePrimaryAlert;
   document.querySelector("#detail-primary-unavailable").hidden = Boolean(activePrimaryAlert);
+  const primaryOccurrences = document.querySelector("#detail-primary-occurrences");
+  primaryOccurrences.replaceChildren();
+  const primaryOccurrencesLabel = document.querySelector("#detail-primary-occurrences-label");
+  primaryOccurrencesLabel.hidden = !activePrimaryAlert;
+  for (const timestamp of incident.primary_occurrence_times || []) {
+    const item = document.createElement("li");
+    item.textContent = formatStatusTime(timestamp);
+    primaryOccurrences.append(item);
+  }
+  primaryOccurrences.hidden = !activePrimaryAlert;
   document.querySelector("#detail-alert-count").textContent =
-    `(${alerts.length} groupes)`;
+    `(${alerts.filter((alert) => alert.id !== incident.primary_alert_id).length} groupes)`;
   alertContainer.replaceChildren();
-  for (const alert of alerts) {
+  for (const alert of alerts.filter((item) => item.id !== incident.primary_alert_id)) {
     const item = document.createElement("article");
     item.className = "incident-alert";
     item.tabIndex = 0;
@@ -397,12 +407,6 @@ function setIncidentDetail(incident) {
     occurrences.className = "badge";
     occurrences.textContent = `${alert.occurrences} ${alert.occurrences > 1 ? "occurrences" : "occurrence"}`;
     heading.append(occurrences);
-    if (alert.id === incident.primary_alert_id) {
-      const primary = document.createElement("span");
-      primary.className = "badge";
-      primary.textContent = "Événement principal";
-      heading.append(primary);
-    }
     const time = document.createElement("span");
     time.className = "muted";
     time.textContent = formatStatusTime(alert.timestamp);
@@ -412,7 +416,7 @@ function setIncidentDetail(incident) {
     item.append(heading, description);
     alertContainer.append(item);
   }
-  if (!incident.alerts || incident.alerts.length === 0) {
+  if (!alerts.some((alert) => alert.id !== incident.primary_alert_id)) {
     const empty = document.createElement("p");
     empty.className = "muted";
     empty.textContent = "Aucune alerte associée.";

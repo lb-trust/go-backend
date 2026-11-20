@@ -295,12 +295,14 @@ func TestIngestGroupsAlertsAndDeduplicatesWazuhIDs(t *testing.T) {
 func TestIncidentOccurrencesCountOnlyPrimaryAlert(t *testing.T) {
 	backend := testBackend(t, "")
 	ctx := context.Background()
+	baseTime := time.Now().UTC().Truncate(time.Second)
 
-	ingest := func(id, ruleID, description string) Alert {
+	ingest := func(id, ruleID, description string, occurredAt time.Time) Alert {
 		t.Helper()
 		payload := alertPayload(id, highAlertLevel, "agent-primary-count", "")
 		payload["rule"].(map[string]any)["id"] = ruleID
 		payload["rule"].(map[string]any)["description"] = description
+		payload["timestamp"] = occurredAt.Format(time.RFC3339Nano)
 		alert, _, err := backend.IngestAlert(ctx, "tenant-a", payload)
 		if err != nil {
 			t.Fatal(err)
@@ -308,10 +310,10 @@ func TestIncidentOccurrencesCountOnlyPrimaryAlert(t *testing.T) {
 		return alert
 	}
 
-	mainAlert := ingest("main-event-1", "main-rule", "Événement principal")
-	ingest("other-event-1", "other-rule", "Événement associé")
-	ingest("main-event-2", "main-rule", "Événement principal")
-	ingest("other-event-2", "other-rule", "Événement associé")
+	mainAlert := ingest("main-event-1", "main-rule", "Événement principal", baseTime)
+	ingest("other-event-1", "other-rule", "Événement associé", baseTime.Add(time.Minute))
+	ingest("main-event-2", "main-rule", "Événement principal", baseTime.Add(2*time.Minute))
+	ingest("other-event-2", "other-rule", "Événement associé", baseTime.Add(3*time.Minute))
 
 	incidents, err := backend.ListIncidents(ctx, "tenant-a", "", 10)
 	if err != nil || len(incidents) != 1 {
@@ -325,6 +327,12 @@ func TestIncidentOccurrencesCountOnlyPrimaryAlert(t *testing.T) {
 		t.Fatalf("primary alert/count = %q/%d, want %q/2",
 			incident.PrimaryAlertID, incident.Occurrences, mainAlert.ID)
 	}
+	if len(incident.PrimaryOccurrenceTimes) != 2 ||
+		!incident.PrimaryOccurrenceTimes[0].Equal(baseTime) ||
+		!incident.PrimaryOccurrenceTimes[1].Equal(baseTime.Add(2*time.Minute)) {
+		t.Fatalf("primary occurrence times = %#v, want %v and %v",
+			incident.PrimaryOccurrenceTimes, baseTime, baseTime.Add(2*time.Minute))
+	}
 	if len(incident.Alerts) != 2 {
 		t.Fatalf("associated alert groups = %d, want 2", len(incident.Alerts))
 	}
@@ -334,13 +342,18 @@ func TestIncidentOccurrencesCountOnlyPrimaryAlert(t *testing.T) {
 		}
 	}
 
-	ingest("main-event-3", "main-rule", "Événement principal")
+	ingest("main-event-3", "main-rule", "Événement principal", baseTime.Add(4*time.Minute))
 	incident, err = backend.GetIncident(ctx, "tenant-a", incidents[0].ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if incident.Occurrences != 3 {
 		t.Fatalf("primary event occurrences after another event = %d, want 3", incident.Occurrences)
+	}
+	if len(incident.PrimaryOccurrenceTimes) != 3 ||
+		!incident.PrimaryOccurrenceTimes[2].Equal(baseTime.Add(4*time.Minute)) {
+		t.Fatalf("primary occurrence times after another event = %#v, want final time %v",
+			incident.PrimaryOccurrenceTimes, baseTime.Add(4*time.Minute))
 	}
 }
 
