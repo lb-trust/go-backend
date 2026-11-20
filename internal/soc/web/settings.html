@@ -87,6 +87,18 @@
       </form>
       <p id="wazuh-config-message" class="message" role="status" aria-live="polite"></p>
     </section>
+
+    <section class="panel">
+      <p class="eyebrow">ACTION IRRÉVERSIBLE</p>
+      <h2>Vider toutes les alertes</h2>
+      <p class="muted">Cette action supprime définitivement toutes les alertes de tous les clients, ainsi que les incidents et analyses associés. La base SQLite sera compactée. Cette action est réservée aux administrateurs et ne peut pas être annulée.</p>
+      <form id="clear-alerts-form" class="admin-form">
+        <label for="clear-alerts-password">Confirmer avec votre mot de passe administrateur</label>
+        <input id="clear-alerts-password" type="password" autocomplete="current-password" required>
+        <button type="submit" class="danger-button">Vider toutes les alertes</button>
+      </form>
+      <p id="clear-alerts-message" class="message" role="status" aria-live="polite"></p>
+    </section>
   </main>
   <script src="/assets/admin.js" defer></script>
 </body>

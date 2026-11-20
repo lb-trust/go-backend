@@ -999,6 +999,36 @@ func (b *Backend) DeleteIncident(ctx context.Context, tenantID, id string) error
 	return nil
 }
 
+func (b *Backend) ClearAllAlerts(ctx context.Context) error {
+	tx, err := b.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("démarrer la suppression des alertes: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM incidents`); err != nil {
+		return fmt.Errorf("supprimer les incidents associés aux alertes: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM alert_groups`); err != nil {
+		return fmt.Errorf("supprimer les alertes: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("valider la suppression des alertes: %w", err)
+	}
+	if _, err := b.db.ExecContext(ctx, `VACUUM`); err != nil {
+		return fmt.Errorf("compacter la base après la suppression des alertes: %w", err)
+	}
+	var busy, logPages, checkpointedPages int
+	if err := b.db.QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).
+		Scan(&busy, &logPages, &checkpointedPages); err != nil {
+		return fmt.Errorf("libérer l'espace du journal SQLite après la suppression des alertes: %w", err)
+	}
+	if busy != 0 {
+		return fmt.Errorf("libérer l'espace du journal SQLite après la suppression des alertes: checkpoint occupé")
+	}
+	return nil
+}
+
 func (b *Backend) Dashboard(ctx context.Context, tenantID string) (map[string]any, error) {
 	result := map[string]any{"alerts": 0, "incidents": 0, "open_incidents": 0, "severity": map[string]int{}}
 	for query, key := range map[string]string{

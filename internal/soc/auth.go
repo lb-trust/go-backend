@@ -215,6 +215,20 @@ func verifyPassword(password, encoded string) bool {
 	return err == nil && subtle.ConstantTimeCompare(actual, expected) == 1
 }
 
+func (b *Backend) verifyAdminPassword(ctx context.Context, username, password string) (bool, error) {
+	var passwordHash string
+	err := b.db.QueryRowContext(ctx,
+		`SELECT password_hash FROM soc_accounts WHERE username = ? AND role = 'admin'`,
+		username).Scan(&passwordHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("lire le mot de passe administrateur: %w", err)
+	}
+	return verifyPassword(password, passwordHash), nil
+}
+
 func (b *Backend) login(username, password string) (string, time.Time, error) {
 	var encodedHash string
 	var role string

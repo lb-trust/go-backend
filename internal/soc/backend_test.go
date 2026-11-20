@@ -765,6 +765,105 @@ func TestDeleteIncidentAPIAndPreserveSourceAlerts(t *testing.T) {
 	}
 }
 
+func TestClearAllAlertsRequiresAdminPasswordAndDeletesAllTenants(t *testing.T) {
+	backend := testBackend(t, "")
+	ctx := context.Background()
+	for _, tenantID := range []string{"tenant-a", "tenant-b"} {
+		raw := alertPayload("clear-"+tenantID, highAlertLevel, "agent-"+tenantID, "203.0.113.25")
+		raw["test_payload"] = strings.Repeat("x", 512*1024)
+		if _, _, err := backend.IngestAlert(ctx, tenantID, raw); err != nil {
+			t.Fatal(err)
+		}
+		incidents, err := backend.ListIncidents(ctx, tenantID, "", 10)
+		if err != nil || len(incidents) != 1 {
+			t.Fatalf("incidents for %s = %#v, error = %v", tenantID, incidents, err)
+		}
+		if err := backend.QueueIncidentAnalysis(ctx, tenantID, incidents[0].ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	storageBefore, err := backend.DatabaseStorage()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(backend.Handler())
+	defer server.Close()
+	adminToken := loginAdmin(t, server)
+	clearAlerts := func(token, password string) *http.Response {
+		t.Helper()
+		request, err := http.NewRequest(http.MethodDelete, server.URL+"/api/admin/alerts",
+			jsonBody(map[string]string{"current_password": password}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if token != "" {
+			request.Header.Set("Authorization", "Bearer "+token)
+		}
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return response
+	}
+
+	response := clearAlerts("", testAdminPassword)
+	response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated clear status = %d, want %d", response.StatusCode, http.StatusUnauthorized)
+	}
+	response = clearAlerts("token-a", testAdminPassword)
+	response.Body.Close()
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("non-admin clear status = %d, want %d", response.StatusCode, http.StatusForbidden)
+	}
+	response = clearAlerts(adminToken, "")
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("missing-password clear status = %d, want %d", response.StatusCode, http.StatusBadRequest)
+	}
+	response = clearAlerts(adminToken, "wrong-password")
+	response.Body.Close()
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("wrong-password clear status = %d, want %d", response.StatusCode, http.StatusForbidden)
+	}
+	for _, table := range []string{"alert_groups", "incidents"} {
+		var count int
+		if err := backend.db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count == 0 {
+			t.Fatalf("wrong password deleted data from %s", table)
+		}
+	}
+
+	response = clearAlerts(adminToken, testAdminPassword)
+	response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("valid-password clear status = %d, want %d", response.StatusCode, http.StatusNoContent)
+	}
+	for _, table := range []string{
+		"alert_groups", "alert_events", "wazuh_event_dedup",
+		"incidents", "incident_alerts", "incident_ai_jobs",
+	} {
+		var count int
+		if err := backend.db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Errorf("clear left %d records in %s", count, table)
+		}
+	}
+	storageAfter, err := backend.DatabaseStorage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if storageAfter.TotalBytes >= storageBefore.TotalBytes || storageAfter.WALBytes != 0 {
+		t.Fatalf("database storage after clear = %#v, before = %#v; want less storage and an empty WAL",
+			storageAfter, storageBefore)
+	}
+}
+
 func TestWazuhStatusIncludesDatabaseStorage(t *testing.T) {
 	backend := testBackend(t, "")
 	request := httptest.NewRequest(http.MethodGet, "/api/wazuh/status", nil)

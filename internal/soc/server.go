@@ -33,6 +33,7 @@ func (b *Backend) Handler() http.Handler {
 	mux.Handle("GET /api/admin/wazuh", b.authenticateAdminRequest(http.HandlerFunc(b.wazuhConfigurationHandler)))
 	mux.Handle("PUT /api/admin/wazuh", b.authenticateAdminRequest(http.HandlerFunc(b.wazuhConfigurationHandler)))
 	mux.Handle("DELETE /api/admin/wazuh", b.authenticateAdminRequest(http.HandlerFunc(b.clearWazuhConfigurationHandler)))
+	mux.Handle("DELETE /api/admin/alerts", b.authenticateAdminRequest(http.HandlerFunc(b.clearAllAlertsHandler)))
 	mux.Handle("GET /api/dashboard", b.authenticate(http.HandlerFunc(b.dashboardHandler)))
 	mux.Handle("GET /api/control/ai", b.authenticate(http.HandlerFunc(b.aiControlHandler)))
 	mux.Handle("GET /api/wazuh/status", b.authenticate(http.HandlerFunc(b.wazuhStatusHandler)))
@@ -215,6 +216,35 @@ func (b *Backend) listAlertsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, alerts)
+}
+
+func (b *Backend) clearAllAlertsHandler(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		CurrentPassword string `json:"current_password"`
+	}
+	if err := decodeBody(w, r, &payload); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if payload.CurrentPassword == "" {
+		writeError(w, http.StatusBadRequest, "le mot de passe administrateur est obligatoire")
+		return
+	}
+	identity := r.Context().Value(adminIdentityContextKey{}).(adminIdentity)
+	valid, err := b.verifyAdminPassword(r.Context(), identity.Username, payload.CurrentPassword)
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	if !valid {
+		writeError(w, http.StatusForbidden, "mot de passe administrateur incorrect")
+		return
+	}
+	if err := b.ClearAllAlerts(r.Context()); err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (b *Backend) ingestAlertHandler(w http.ResponseWriter, r *http.Request) {

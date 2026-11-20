@@ -261,3 +261,32 @@ if (wazuhForm) {
     }
   });
 }
+
+const clearAlertsForm = document.querySelector("#clear-alerts-form");
+if (clearAlertsForm) {
+  const message = document.querySelector("#clear-alerts-message");
+  clearAlertsForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!window.confirm(
+      "Supprimer définitivement toutes les alertes de tous les clients ainsi que leurs incidents et analyses ? Cette action est irréversible.",
+    )) return;
+
+    const button = clearAlertsForm.querySelector("button[type='submit']");
+    button.disabled = true;
+    try {
+      await adminAPI("/api/admin/alerts", {
+        method: "DELETE",
+        body: JSON.stringify({
+          current_password: document.querySelector("#clear-alerts-password").value,
+        }),
+      });
+      clearAlertsForm.reset();
+      showMessage(message, "Toutes les alertes et les données associées ont été supprimées.", true);
+    } catch (error) {
+      showMessage(message, error.message);
+    } finally {
+      document.querySelector("#clear-alerts-password").value = "";
+      button.disabled = false;
+    }
+  });
+}
