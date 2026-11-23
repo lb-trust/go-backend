@@ -369,12 +369,19 @@ func (b *Backend) pollWazuh(ctx context.Context, source WazuhSource) (pollErr er
 	}
 	indexPath := strings.ReplaceAll(url.PathEscape(source.AlertsIndex), "%2A", "*")
 	base.Path = strings.TrimRight(base.Path, "/") + "/" + indexPath + "/_search"
+	clearedAt, err := b.alertsClearedAt(ctx)
+	if err != nil {
+		return err
+	}
+	pollStart := time.Now().UTC().Add(-b.config.WazuhPollInterval - time.Minute)
+	timestampRange := map[string]string{"gte": pollStart.Format(time.RFC3339)}
+	if clearedAt.After(pollStart) {
+		timestampRange = map[string]string{"gt": clearedAt.UTC().Format(time.RFC3339Nano)}
+	}
 	query := map[string]any{
-		"size": source.BatchSize,
-		"sort": []any{map[string]any{"timestamp": map[string]string{"order": "asc"}}},
-		"query": map[string]any{"range": map[string]any{
-			"timestamp": map[string]string{"gte": time.Now().UTC().Add(-b.config.WazuhPollInterval - time.Minute).Format(time.RFC3339)},
-		}},
+		"size":  source.BatchSize,
+		"sort":  []any{map[string]any{"timestamp": map[string]string{"order": "asc"}}},
+		"query": map[string]any{"range": map[string]any{"timestamp": timestampRange}},
 	}
 	body, err := json.Marshal(query)
 	if err != nil {
@@ -429,14 +436,25 @@ func (b *Backend) pollWazuh(ctx context.Context, source WazuhSource) (pollErr er
 		return fmt.Errorf("décoder les alertes Wazuh: %w", err)
 	}
 	status.AlertsReceived = len(result.Hits.Hits)
+	b.alertClearMu.RLock()
+	clearedAt, err = b.alertsClearedAt(ctx)
+	if err != nil {
+		b.alertClearMu.RUnlock()
+		return err
+	}
+	defer b.alertClearMu.RUnlock()
 	for _, hit := range result.Hits.Hits {
 		if hit.Source == nil {
 			return fmt.Errorf("Wazuh a renvoyé une alerte sans document source")
 		}
 		if rawTimestamp, ok := hit.Source["timestamp"].(string); ok {
-			if timestamp, err := parseAlertTimestamp(rawTimestamp); err == nil &&
-				(status.LastAlert == nil || timestamp.After(*status.LastAlert)) {
-				status.LastAlert = &timestamp
+			if timestamp, err := parseAlertTimestamp(rawTimestamp); err == nil {
+				if !clearedAt.IsZero() && !timestamp.After(clearedAt) {
+					continue
+				}
+				if status.LastAlert == nil || timestamp.After(*status.LastAlert) {
+					status.LastAlert = &timestamp
+				}
 			}
 		}
 		hit.Source["_id"] = hit.ID

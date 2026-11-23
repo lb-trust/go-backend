@@ -1352,6 +1352,7 @@ func TestIRISRetryReusesSavedAnalysis(t *testing.T) {
 
 func TestWazuhPollerIngestsAndDeduplicatesIndexerResults(t *testing.T) {
 	var calls atomic.Int32
+	payload := alertPayload("", 5, "indexer-agent", "203.0.113.12")
 	indexer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		if r.URL.Path != "/wazuh-alerts-*/_search" {
@@ -1365,7 +1366,7 @@ func TestWazuhPollerIngestsAndDeduplicatesIndexerResults(t *testing.T) {
 			"hits": map[string]any{"hits": []any{
 				map[string]any{
 					"_id":     "indexer-event",
-					"_source": alertPayload("", 5, "indexer-agent", "203.0.113.12"),
+					"_source": payload,
 				},
 			}},
 		})
@@ -1416,6 +1417,20 @@ func TestWazuhPollerIngestsAndDeduplicatesIndexerResults(t *testing.T) {
 	if response.Code != http.StatusOK || !statusResponse.Configured ||
 		len(statusResponse.Sources) != 1 || statusResponse.Sources[0].State != "receiving" {
 		t.Fatalf("Wazuh status API response = (%d, %#v)", response.Code, statusResponse)
+	}
+
+	if err := backend.ClearAllAlerts(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.pollWazuh(context.Background(), source); err != nil {
+		t.Fatal(err)
+	}
+	alerts, err = backend.ListAlerts(context.Background(), "tenant-a", 10, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(alerts) != 0 {
+		t.Fatalf("Wazuh re-imported %d pre-clear alerts after clearing", len(alerts))
 	}
 }
 

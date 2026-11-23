@@ -51,6 +51,7 @@ type Backend struct {
 	credentialKey    []byte
 	httpClient       *http.Client
 	workers          sync.WaitGroup
+	alertClearMu     sync.RWMutex
 	wazuhStatusMu    sync.RWMutex
 	wazuhStatuses    map[string]WazuhSourceStatus
 	wazuhConfigMu    sync.RWMutex
@@ -1028,20 +1029,34 @@ func (b *Backend) DeleteIncident(ctx context.Context, tenantID, id string) error
 }
 
 func (b *Backend) ClearAllAlerts(ctx context.Context) error {
-	tx, err := b.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("démarrer la suppression des alertes: %w", err)
-	}
-	defer tx.Rollback()
+	b.alertClearMu.Lock()
+	err := func() error {
+		defer b.alertClearMu.Unlock()
+		tx, err := b.db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("démarrer la suppression des alertes: %w", err)
+		}
+		defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM incidents`); err != nil {
-		return fmt.Errorf("supprimer les incidents associés aux alertes: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM alert_groups`); err != nil {
-		return fmt.Errorf("supprimer les alertes: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("valider la suppression des alertes: %w", err)
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO soc_settings(key, value) VALUES('alerts_cleared_at', ?)
+			 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+			formatDatabaseTime(time.Now())); err != nil {
+			return fmt.Errorf("enregistrer la date de suppression des alertes: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM incidents`); err != nil {
+			return fmt.Errorf("supprimer les incidents associés aux alertes: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM alert_groups`); err != nil {
+			return fmt.Errorf("supprimer les alertes: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("valider la suppression des alertes: %w", err)
+		}
+		return nil
+	}()
+	if err != nil {
+		return err
 	}
 	if _, err := b.db.ExecContext(ctx, `VACUUM`); err != nil {
 		return fmt.Errorf("compacter la base après la suppression des alertes: %w", err)
@@ -1055,6 +1070,22 @@ func (b *Backend) ClearAllAlerts(ctx context.Context) error {
 		return fmt.Errorf("libérer l'espace du journal SQLite après la suppression des alertes: checkpoint occupé")
 	}
 	return nil
+}
+
+func (b *Backend) alertsClearedAt(ctx context.Context) (time.Time, error) {
+	var value string
+	if err := b.db.QueryRowContext(ctx,
+		`SELECT value FROM soc_settings WHERE key = 'alerts_cleared_at'`).Scan(&value); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return time.Time{}, nil
+		}
+		return time.Time{}, fmt.Errorf("lire la date de suppression des alertes: %w", err)
+	}
+	clearedAt, err := time.Parse(databaseTimeLayout, value)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("lire la date de suppression des alertes: %w", err)
+	}
+	return clearedAt, nil
 }
 
 func (b *Backend) Dashboard(ctx context.Context, tenantID string) (map[string]any, error) {
