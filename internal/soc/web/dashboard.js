@@ -46,6 +46,7 @@ let latestQueuedIncidentIDs = new Set();
 let configuredGroups = null;
 let activeIncidentID = "";
 let activePrimaryAlert = null;
+let activePrimaryOccurrenceTimes = [];
 let refreshTimer;
 
 function updateColumnFilterSummary() {
@@ -367,6 +368,7 @@ function setIncidentDetail(incident) {
   const alertContainer = document.querySelector("#detail-alerts");
   const alerts = incident.alerts || [];
   activePrimaryAlert = alerts.find((alert) => alert.id === incident.primary_alert_id) || null;
+  activePrimaryOccurrenceTimes = incident.primary_occurrence_times || [];
   document.querySelector("#detail-primary-description").textContent = activePrimaryAlert
     ? `Règle ${activePrimaryAlert.rule_id} · niveau ${activePrimaryAlert.rule_level}/15 · ${activePrimaryAlert.occurrences} ${activePrimaryAlert.occurrences > 1 ? "occurrences" : "occurrence"} — ${activePrimaryAlert.description || "Aucune description"}`
     : "";
@@ -433,7 +435,62 @@ function setIncidentDetail(incident) {
   document.querySelector("#empty-feedback").hidden = (incident.feedback || []).length > 0;
 }
 
-function openAlertDetails(alert) {
+function buildPrimaryAlertReport(alert, occurrenceTimes) {
+  const timeline = occurrenceTimes.map((occurredAt, index) => {
+    const currentTime = new Date(occurredAt).getTime();
+    const previousTime = index > 0 ? new Date(occurrenceTimes[index - 1]).getTime() : null;
+    return {
+      occurred_at: occurredAt,
+      seconds_since_previous: previousTime === null || !Number.isFinite(currentTime) ||
+        !Number.isFinite(previousTime)
+        ? null
+        : (currentTime - previousTime) / 1000,
+    };
+  });
+  const firstSeen = timeline[0]?.occurred_at || alert.first_seen || null;
+  const lastSeen = timeline[timeline.length - 1]?.occurred_at || alert.last_seen || null;
+  const firstTime = firstSeen ? new Date(firstSeen).getTime() : NaN;
+  const lastTime = lastSeen ? new Date(lastSeen).getTime() : NaN;
+  const durationSeconds = Number.isFinite(firstTime) && Number.isFinite(lastTime)
+    ? (lastTime - firstTime) / 1000
+    : null;
+
+  return {
+    event: {
+      id: alert.id,
+      wazuh_id: alert.wazuh_id || null,
+      timestamp: alert.timestamp,
+      rule: {
+        id: alert.rule_id,
+        level: alert.rule_level,
+        description: alert.description,
+      },
+      agent: {
+        id: alert.agent_id || null,
+        name: alert.agent_name || null,
+        ip: alert.agent_ip || null,
+        groups: alert.agent_groups || [],
+      },
+      source_ip: alert.source_ip || null,
+      destination_ip: alert.dest_ip || null,
+      location: alert.location || null,
+    },
+    occurrences: {
+      total: alert.occurrences,
+      last_6_hours: alert.occurrences_6h,
+      first_seen: firstSeen,
+      last_seen: lastSeen,
+      observed_duration_seconds: durationSeconds,
+      average_interval_seconds: durationSeconds !== null && timeline.length > 1
+        ? durationSeconds / (timeline.length - 1)
+        : null,
+      timeline,
+    },
+    wazuh_event: alert.raw || {},
+  };
+}
+
+function openAlertDetails(alert, occurrenceTimes) {
   document.querySelector("#alert-dialog-title").textContent =
     `Règle ${alert.rule_id} · ${alert.description || "Aucune description"}`;
   document.querySelector("#alert-detail-occurrences").textContent =
@@ -445,8 +502,16 @@ function openAlertDetails(alert) {
   document.querySelector("#alert-detail-source").textContent = alert.source_ip || "—";
   document.querySelector("#alert-detail-destination").textContent = alert.dest_ip || "—";
   document.querySelector("#alert-detail-location").textContent = alert.location || "—";
+  const isPrimaryAlert = occurrenceTimes !== undefined;
+  document.querySelector("#alert-detail-json-title").textContent = isPrimaryAlert
+    ? "JSON enrichi de l’événement principal"
+    : "Événement Wazuh brut";
   document.querySelector("#alert-detail-raw").textContent =
-    JSON.stringify(alert.raw || {}, null, 2);
+    JSON.stringify(
+      isPrimaryAlert ? buildPrimaryAlertReport(alert, occurrenceTimes) : alert.raw || {},
+      null,
+      2,
+    );
   document.querySelector("#alert-dialog").showModal();
 }
 
@@ -676,7 +741,7 @@ document.querySelector("#close-alert").addEventListener("click", () => {
   alertDialog.close();
 });
 document.querySelector("#view-primary-alert").addEventListener("click", () => {
-  if (activePrimaryAlert) openAlertDetails(activePrimaryAlert);
+  if (activePrimaryAlert) openAlertDetails(activePrimaryAlert, activePrimaryOccurrenceTimes);
 });
 alertDialog.addEventListener("click", (event) => {
   if (event.target === alertDialog) alertDialog.close();
