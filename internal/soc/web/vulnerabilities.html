@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Versions à mettre à jour — Console SOC</title>
+  <link rel="stylesheet" href="/assets/dashboard.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">TRUSTINFO SOC</p>
+        <h1>Versions à mettre à jour</h1>
+      </div>
+      <nav class="maintenance-actions" aria-label="Navigation">
+        <a class="secondary maintenance-back" href="/">Retour au dashboard</a>
+        <a class="secondary maintenance-back" href="/settings">Configuration Wazuh</a>
+      </nav>
+    </header>
+
+    <section class="panel">
+      <p class="eyebrow">INVENTAIRE LOGICIEL WAZUH</p>
+      <h2>Rechercher un agent</h2>
+      <p class="muted">Saisissez l’ID d’un agent pour afficher les logiciels dont la version doit être mise à jour. La liste est triée par priorité ; les détails des failles ne sont pas affichés.</p>
+      <form id="vulnerability-search" class="vulnerability-search">
+        <label for="agent-id">ID de l’agent</label>
+        <input id="agent-id" name="agent_id" type="search" maxlength="128" autocomplete="off" required>
+        <button id="search-agent" type="submit">Rechercher</button>
+      </form>
+      <p id="vulnerability-message" class="message" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="panel" id="vulnerability-results" hidden>
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">LOGICIELS À METTRE À JOUR</p>
+          <h2 id="agent-heading">Agent</h2>
+        </div>
+        <span class="muted" id="vulnerability-count"></span>
+      </div>
+      <p id="vulnerability-warning" class="muted" hidden></p>
+      <div class="table-wrap">
+        <table class="vulnerability-table">
+          <thead>
+            <tr>
+              <th>Logiciel</th>
+              <th>Version installée</th>
+              <th>Priorité</th>
+              <th>Détections</th>
+            </tr>
+          </thead>
+          <tbody id="vulnerability-body"></tbody>
+        </table>
+      </div>
+      <p id="empty-vulnerabilities" class="empty" hidden>Aucun logiciel vulnérable trouvé pour cet agent.</p>
+    </section>
+  </main>
+  <script src="/assets/vulnerabilities.js" defer></script>
+</body>
+</html>

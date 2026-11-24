@@ -64,6 +64,8 @@ disposer uniquement des permissions nécessaires :
 
 - lecture (`read`) sur le motif d'index des alertes, généralement
   `wazuh-alerts-*` ;
+- lecture (`read`) sur l'inventaire des vulnérabilités, généralement
+  `wazuh-states-vulnerabilities-*` ;
 - permission de recherche en lecture seule au niveau cluster, si elle est
   requise par la configuration Wazuh (par exemple
   `cluster_composite_ops_ro`).
@@ -95,6 +97,7 @@ un tableau JSON de sources. Exemple de structure :
     "password": "<SECRET>",
     "verify_tls": true,
     "alerts_index": "wazuh-alerts-*",
+    "vulnerabilities_index": "wazuh-states-vulnerabilities-*",
     "batch_size": 100
   }
 ]
@@ -107,6 +110,7 @@ un tableau JSON de sources. Exemple de structure :
 | `username` / `password` | Identifiants du compte de lecture dédié. |
 | `verify_tls` | Vérifie la chaîne de certificats TLS. Laisser `true` en environnement normal. |
 | `alerts_index` | Motif d'index à rechercher ; `wazuh-alerts-*` par défaut. |
+| `vulnerabilities_index` | Index de l'inventaire des vulnérabilités ; `wazuh-states-vulnerabilities-*` par défaut. |
 | `batch_size` | Nombre maximal de résultats demandé par interrogation ; valeur par défaut `100`, maximum `1000`. |
 
 Pour un essai ponctuel dans un shell Bash, définissez la variable avant le

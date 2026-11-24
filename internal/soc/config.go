@@ -32,14 +32,17 @@ type Config struct {
 }
 
 type WazuhSource struct {
-	TenantID    string `json:"tenant_id"`
-	URL         string `json:"url"`
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	VerifyTLS   *bool  `json:"verify_tls"`
-	AlertsIndex string `json:"alerts_index"`
-	BatchSize   int    `json:"batch_size"`
+	TenantID             string `json:"tenant_id"`
+	URL                  string `json:"url"`
+	Username             string `json:"username"`
+	Password             string `json:"password"`
+	VerifyTLS            *bool  `json:"verify_tls"`
+	AlertsIndex          string `json:"alerts_index"`
+	VulnerabilitiesIndex string `json:"vulnerabilities_index"`
+	BatchSize            int    `json:"batch_size"`
 }
+
+const defaultVulnerabilitiesIndex = "wazuh-states-vulnerabilities-*"
 
 func LoadConfig() (Config, error) {
 	cfg := Config{
@@ -107,6 +110,9 @@ func LoadConfig() (Config, error) {
 		}
 		if source.AlertsIndex == "" {
 			source.AlertsIndex = "wazuh-alerts-*"
+		}
+		if source.VulnerabilitiesIndex == "" {
+			source.VulnerabilitiesIndex = defaultVulnerabilitiesIndex
 		}
 		if source.BatchSize <= 0 || source.BatchSize > 1000 {
 			source.BatchSize = 100

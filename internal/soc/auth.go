@@ -657,8 +657,10 @@ func (b *Backend) wazuhConfigurationHandler(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusOK, map[string]any{
 			"configured": true, "url": source.URL,
 			"username": source.Username, "verify_tls": source.VerifyTLS,
-			"alerts_index": source.AlertsIndex, "batch_size": source.BatchSize,
-			"password_configured": source.Password != "",
+			"alerts_index":          source.AlertsIndex,
+			"vulnerabilities_index": source.VulnerabilitiesIndex,
+			"batch_size":            source.BatchSize,
+			"password_configured":   source.Password != "",
 		})
 		return
 	}
@@ -667,12 +669,13 @@ func (b *Backend) wazuhConfigurationHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var payload struct {
-		URL         string `json:"url"`
-		Username    string `json:"username"`
-		Password    string `json:"password"`
-		VerifyTLS   *bool  `json:"verify_tls"`
-		AlertsIndex string `json:"alerts_index"`
-		BatchSize   int    `json:"batch_size"`
+		URL                  string `json:"url"`
+		Username             string `json:"username"`
+		Password             string `json:"password"`
+		VerifyTLS            *bool  `json:"verify_tls"`
+		AlertsIndex          string `json:"alerts_index"`
+		VulnerabilitiesIndex string `json:"vulnerabilities_index"`
+		BatchSize            int    `json:"batch_size"`
 	}
 	if err := decodeBody(w, r, &payload); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -698,10 +701,14 @@ func (b *Backend) wazuhConfigurationHandler(w http.ResponseWriter, r *http.Reque
 		TenantID: source.TenantID, URL: strings.TrimSpace(payload.URL),
 		Username: strings.TrimSpace(payload.Username), Password: payload.Password,
 		VerifyTLS: payload.VerifyTLS, AlertsIndex: strings.TrimSpace(payload.AlertsIndex),
-		BatchSize: payload.BatchSize,
+		VulnerabilitiesIndex: strings.TrimSpace(payload.VulnerabilitiesIndex),
+		BatchSize:            payload.BatchSize,
 	}
 	if source.AlertsIndex == "" {
 		source.AlertsIndex = "wazuh-alerts-*"
+	}
+	if source.VulnerabilitiesIndex == "" {
+		source.VulnerabilitiesIndex = defaultVulnerabilitiesIndex
 	}
 	if source.BatchSize == 0 {
 		source.BatchSize = 100

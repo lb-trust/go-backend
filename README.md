@@ -362,6 +362,8 @@ d’exécution, pas une source du projet.
   client (`tenant_id`).
 - Configuration Wazuh testée et enregistrée depuis l’interface ; les filtres de
   groupes du dashboard sont découverts automatiquement.
+- Recherche d’inventaire par ID d’agent, présentant les logiciels concernés
+  dans l’ordre de priorité sans afficher les identifiants ni les détails des CVE.
 - Collecte périodique optionnelle du Wazuh Indexer en lecture seule et
   ingestion manuelle d’alertes.
 - Déduplication des identifiants Wazuh, regroupement par client, règle et
@@ -406,7 +408,14 @@ contient :
 | `username`, `password` | oui | Compte Indexer en lecture seule. |
 | `verify_tls` | non | `true` par défaut ; conserve la vérification des certificats TLS. |
 | `alerts_index` | non | Index à lire ; `wazuh-alerts-*` par défaut. |
+| `vulnerabilities_index` | non | Index d’inventaire à consulter ; `wazuh-states-vulnerabilities-*` par défaut. |
 | `batch_size` | non | Nombre maximal de résultats par contrôle ; `100` par défaut, maximum `1000`. |
+
+L’écran « Versions à mettre à jour » recherche les détections présentes dans
+l’inventaire Wazuh courant à partir de l’ID d’un agent. Les logiciels sont
+regroupés par nom et version, puis triés selon leur priorité de sévérité ; cet
+écran ne remplace pas la vérification des mises à jour disponibles chez les
+éditeurs.
 
 `tenant_id` est un paramètre interne de l’ancienne configuration par
 environnement ; il n’est pas demandé dans l’interface graphique. Dans le

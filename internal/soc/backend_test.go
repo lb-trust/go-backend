@@ -1,6 +1,7 @@
 package soc
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -1752,6 +1753,10 @@ func TestWazuhConfigurationIsTestedAndPersisted(t *testing.T) {
 	if response.StatusCode != http.StatusOK || savedConfiguration["password_configured"] != true {
 		t.Fatalf("Wazuh configuration response = (%d, %#v)", response.StatusCode, savedConfiguration)
 	}
+	if savedConfiguration["vulnerabilities_index"] != defaultVulnerabilitiesIndex {
+		t.Fatalf("default vulnerabilities index = %#v, want %q",
+			savedConfiguration["vulnerabilities_index"], defaultVulnerabilitiesIndex)
+	}
 	if _, exposesPassword := savedConfiguration["password"]; exposesPassword {
 		t.Fatal("Wazuh configuration response exposed the saved password")
 	}
@@ -1770,7 +1775,8 @@ func TestWazuhConfigurationIsTestedAndPersisted(t *testing.T) {
 	}
 	defer restarted.Close()
 	sources := restarted.wazuhSources()
-	if len(sources) != 1 || sources[0].Username != "reader" || sources[0].Password != "test-password" {
+	if len(sources) != 1 || sources[0].Username != "reader" || sources[0].Password != "test-password" ||
+		sources[0].VulnerabilitiesIndex != defaultVulnerabilitiesIndex {
 		t.Fatalf("persisted Wazuh configuration = %#v", sources)
 	}
 }
@@ -1908,6 +1914,123 @@ func TestWazuhConfigurationFailureIncludesSafeHTTPDetails(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), responseDetail) {
 		t.Fatal("general collector error exposed the Indexer response body")
+	}
+}
+
+func TestVulnerabilityInventorySearchReturnsPrioritizedSoftwareOnly(t *testing.T) {
+	backend := testBackend(t, "")
+	verifyTLS := true
+	wazuh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost ||
+			!strings.Contains(r.URL.Path, defaultVulnerabilitiesIndex+"/_search") {
+			t.Errorf("Wazuh request = %s %s", r.Method, r.URL.Path)
+		}
+		username, password, ok := r.BasicAuth()
+		if !ok || username != "reader" || password != "test-password" {
+			t.Error("Wazuh request did not use the configured credentials")
+		}
+		var query map[string]any
+		decoder := json.NewDecoder(r.Body)
+		decoder.UseNumber()
+		if err := decoder.Decode(&query); err != nil {
+			t.Errorf("decode Wazuh query: %v", err)
+		} else {
+			sourceFields, ok := query["_source"].([]any)
+			if !ok {
+				t.Errorf("Wazuh query does not limit returned fields: %#v", query["_source"])
+			} else {
+				for _, field := range sourceFields {
+					if field == "vulnerability.id" || field == "vulnerability.description" {
+						t.Errorf("Wazuh query requests flaw details: %#v", sourceFields)
+					}
+				}
+			}
+			filter, ok := query["query"].(map[string]any)
+			if !ok || filter["term"] == nil {
+				t.Errorf("Wazuh query does not filter by agent ID: %#v", query)
+			} else if term, ok := filter["term"].(map[string]any); !ok || term["agent.id"] != "007" {
+				t.Errorf("Wazuh query agent filter = %#v, want ID 007", filter["term"])
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"hits":{"total":{"value":3,"relation":"eq"},"hits":[
+				{"_source":{"agent":{"id":"007","name":"poste-test"},"package":{"name":"Chrome","version":"120.0"},"vulnerability":{"id":"CVE-2025-1111","severity":"Medium","score":{"base":5.5}}}},
+				{"_source":{"agent":{"id":"007","name":"poste-test"},"package":{"name":"Firefox","version":"130.0"},"vulnerability":{"id":"CVE-2025-2222","severity":"High","score":{"base":8.0}}}},
+				{"_source":{"agent":{"id":"007","name":"poste-test"},"package":{"name":"Firefox","version":"130.0"},"vulnerability":{"id":"CVE-2025-3333","severity":"Critical","score":{"base":9.8}}}}
+			]}}`))
+	}))
+	defer wazuh.Close()
+	if err := backend.setWazuhSources(context.Background(), []WazuhSource{{
+		TenantID: "tenant-a", URL: wazuh.URL, Username: "reader", Password: "test-password",
+		VerifyTLS: &verifyTLS, AlertsIndex: "wazuh-alerts-*",
+		VulnerabilitiesIndex: defaultVulnerabilitiesIndex, BatchSize: 100,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(backend.Handler())
+	defer server.Close()
+	request, err := http.NewRequest(http.MethodGet,
+		server.URL+"/api/vulnerabilities?agent_id=007", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+loginAdmin(t, server))
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var inventory struct {
+		AgentID         string `json:"agent_id"`
+		AgentName       string `json:"agent_name"`
+		TotalDetections int    `json:"total_detections"`
+		Software        []struct {
+			Name       string `json:"name"`
+			Version    string `json:"version"`
+			Priority   string `json:"priority"`
+			Detections int    `json:"detections"`
+		} `json:"software"`
+	}
+	var responseBody bytes.Buffer
+	if _, err := responseBody.ReadFrom(response.Body); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(responseBody.Bytes(), &inventory); err != nil {
+		t.Fatalf("decode vulnerability response: %v; body = %s", err, responseBody.String())
+	}
+	if response.StatusCode != http.StatusOK || inventory.AgentID != "007" ||
+		inventory.AgentName != "poste-test" || inventory.TotalDetections != 3 ||
+		len(inventory.Software) != 2 {
+		t.Fatalf("vulnerability inventory = (%d, %#v)", response.StatusCode, inventory)
+	}
+	if first := inventory.Software[0]; first.Name != "Firefox" ||
+		first.Version != "130.0" || first.Priority != "critical" || first.Detections != 2 {
+		t.Fatalf("highest-priority software = %#v", first)
+	}
+	if second := inventory.Software[1]; second.Name != "Chrome" || second.Priority != "medium" {
+		t.Fatalf("next software = %#v", second)
+	}
+	if strings.Contains(responseBody.String(), "CVE-") || strings.Contains(responseBody.String(), "description") {
+		t.Fatalf("vulnerability response exposed flaw details: %s", responseBody.String())
+	}
+
+	pageResponse, err := http.Get(server.URL + "/vulnerabilities")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pageResponse.Body.Close()
+	if pageResponse.StatusCode != http.StatusOK {
+		t.Fatalf("vulnerability page status = %d, want %d", pageResponse.StatusCode, http.StatusOK)
+	}
+	assetResponse, err := http.Get(server.URL + "/assets/vulnerabilities.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assetResponse.Body.Close()
+	if assetResponse.StatusCode != http.StatusOK {
+		t.Fatalf("vulnerability JavaScript status = %d, want %d", assetResponse.StatusCode, http.StatusOK)
 	}
 }
 

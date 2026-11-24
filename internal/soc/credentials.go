@@ -18,14 +18,15 @@ const wazuhPasswordCipherAAD = "wazuh-password:v1"
 var errCredentialKeyRequired = errors.New("clé de chiffrement Wazuh indisponible ou invalide ; lancez le service avec start.sh ou définissez SOC_CREDENTIAL_KEY_FILE")
 
 type storedWazuhSource struct {
-	TenantID          string `json:"tenant_id"`
-	URL               string `json:"url"`
-	Username          string `json:"username"`
-	Password          string `json:"password"`
-	PasswordEncrypted bool   `json:"password_encrypted,omitempty"`
-	VerifyTLS         *bool  `json:"verify_tls,omitempty"`
-	AlertsIndex       string `json:"alerts_index,omitempty"`
-	BatchSize         int    `json:"batch_size,omitempty"`
+	TenantID             string `json:"tenant_id"`
+	URL                  string `json:"url"`
+	Username             string `json:"username"`
+	Password             string `json:"password"`
+	PasswordEncrypted    bool   `json:"password_encrypted,omitempty"`
+	VerifyTLS            *bool  `json:"verify_tls,omitempty"`
+	AlertsIndex          string `json:"alerts_index,omitempty"`
+	VulnerabilitiesIndex string `json:"vulnerabilities_index,omitempty"`
+	BatchSize            int    `json:"batch_size,omitempty"`
 }
 
 func loadCredentialKey(path string) ([]byte, error) {
@@ -55,7 +56,8 @@ func (b *Backend) encodeWazuhSources(sources []WazuhSource) ([]byte, error) {
 		encodedSources[i] = storedWazuhSource{
 			TenantID: source.TenantID, URL: source.URL, Username: source.Username,
 			Password: source.Password, VerifyTLS: source.VerifyTLS,
-			AlertsIndex: source.AlertsIndex, BatchSize: source.BatchSize,
+			AlertsIndex: source.AlertsIndex, VulnerabilitiesIndex: source.VulnerabilitiesIndex,
+			BatchSize: source.BatchSize,
 		}
 		if source.Password == "" {
 			continue
@@ -81,7 +83,11 @@ func (b *Backend) decodeWazuhSources(raw string) ([]WazuhSource, bool, error) {
 		source := WazuhSource{
 			TenantID: encoded.TenantID, URL: encoded.URL, Username: encoded.Username,
 			Password: encoded.Password, VerifyTLS: encoded.VerifyTLS,
-			AlertsIndex: encoded.AlertsIndex, BatchSize: encoded.BatchSize,
+			AlertsIndex: encoded.AlertsIndex, VulnerabilitiesIndex: encoded.VulnerabilitiesIndex,
+			BatchSize: encoded.BatchSize,
+		}
+		if source.VulnerabilitiesIndex == "" {
+			source.VulnerabilitiesIndex = defaultVulnerabilitiesIndex
 		}
 		if encoded.PasswordEncrypted {
 			password, err := b.decryptCredential(encoded.Password)
