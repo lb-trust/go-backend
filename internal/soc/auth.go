@@ -729,6 +729,11 @@ func (b *Backend) wazuhConfigurationHandler(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadGateway, wazuhConfigurationFailure(err))
 		return
 	}
+	if err := b.checkWazuhVulnerabilityIndex(r.Context(), source); err != nil {
+		writeError(w, http.StatusBadGateway,
+			"Vérification de l’index des vulnérabilités impossible : "+wazuhConfigurationFailure(err))
+		return
+	}
 	if err := b.setWazuhSources(r.Context(), []WazuhSource{source}); err != nil {
 		writeInternalError(w, err)
 		return

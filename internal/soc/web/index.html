@@ -9,7 +9,7 @@
 </head>
 <body>
   <main class="shell">
-    <header class="topbar">
+    <header class="topbar" id="topbar" hidden>
       <div>
         <p class="eyebrow">TRUSTINFO SOC</p>
         <h1>Console de supervision</h1>
@@ -57,10 +57,8 @@
     </section>
 
     <section class="panel login-panel" id="login-panel" hidden>
-      <h2>Connexion</h2>
-      <p>Connectez-vous avec un compte administrateur.</p>
       <form id="login-form" class="login-form">
-        <label for="username">Identifiant</label>
+        <label for="username">Nom d’utilisateur</label>
         <input id="username" name="username" autocomplete="username" required>
         <label for="password">Mot de passe</label>
         <input id="password" name="password" type="password" autocomplete="current-password" required>

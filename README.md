@@ -362,8 +362,8 @@ d’exécution, pas une source du projet.
   client (`tenant_id`).
 - Configuration Wazuh testée et enregistrée depuis l’interface ; les filtres de
   groupes du dashboard sont découverts automatiquement.
-- Recherche d’inventaire par ID d’agent, présentant les logiciels concernés
-  dans l’ordre de priorité sans afficher les identifiants ni les détails des CVE.
+- Recherche d’inventaire par ID, IP ou nom d’agent, présentant les logiciels
+  concernés dans l’ordre de priorité sans afficher les détails des CVE.
 - Collecte périodique optionnelle du Wazuh Indexer en lecture seule et
   ingestion manuelle d’alertes.
 - Déduplication des identifiants Wazuh, regroupement par client, règle et

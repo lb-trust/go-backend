@@ -69,6 +69,7 @@ h2 { font-size: 1.15rem; margin-bottom: 5px; }
 .vulnerability-search { align-items: end; display: flex; flex-wrap: wrap; gap: 10px; max-width: 650px; }
 .vulnerability-search label { flex-basis: 100%; }
 .vulnerability-search input { flex: 1; min-width: 200px; }
+.vulnerability-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
 .vulnerability-table { min-width: 560px; }
 .vulnerability-table td:nth-child(2), .vulnerability-table td:last-child { font-variant-numeric: tabular-nums; }
 .badge.unknown { background: #e4e7ec; color: #475467; }
@@ -138,6 +139,7 @@ tr:last-child td { border-bottom: 0; }
 .row-action { font-size: .78rem; padding: 7px 10px; white-space: nowrap; }
 .empty { color: #667085; padding: 12px 0 0; }
 .message { color: #b42318; min-height: 1.2em; }
+#login-error:empty { display: none; }
 .incident-row { cursor: pointer; }
 .incident-row.queued { background: #f2f4f7; }
 .incident-row:hover { background: #f8faff; }
@@ -185,6 +187,7 @@ tr:last-child td { border-bottom: 0; }
   .filters label { min-width: 0; }
   .vulnerability-search { align-items: stretch; flex-direction: column; }
   .vulnerability-search input { min-width: 0; }
+  .vulnerability-actions { align-items: flex-start; flex-direction: column; }
   #incident-dialog { padding: 18px; }
   #alert-dialog { padding: 18px; }
   .incident-detail-grid { grid-template-columns: 1fr; }

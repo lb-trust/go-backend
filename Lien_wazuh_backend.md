@@ -78,6 +78,13 @@ curl --user '<INDEXER_USER>' \
   'https://<INDEXER_HOST>:9200/wazuh-alerts-*/_search?size=1'
 ```
 
+Vérifiez aussi l'accès à l'inventaire des vulnérabilités :
+
+```bash
+curl --user '<INDEXER_USER>' \
+  'https://<INDEXER_HOST>:9200/wazuh-states-vulnerabilities-*/_search?size=0'
+```
+
 `curl` demande le mot de passe de manière interactive. Une réponse JSON
 contenant des résultats confirme que le compte peut effectuer cette recherche.
 Une interdiction sur une API de listing telle que `_cat/indices` n'empêche pas

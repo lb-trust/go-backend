@@ -6,6 +6,7 @@ const loginPanel = document.querySelector("#login-panel");
 const dashboard = document.querySelector("#dashboard");
 const setupForm = document.querySelector("#setup-form");
 const loginForm = document.querySelector("#login-form");
+const topbar = document.querySelector("#topbar");
 const accountMenu = document.querySelector("#account-menu");
 const connectionState = document.querySelector("#connection-state");
 const pageMessage = document.querySelector("#page-message");
@@ -105,6 +106,7 @@ function setConnected(connected) {
   setupPanel.hidden = true;
   loginPanel.hidden = connected;
   dashboard.hidden = !connected;
+  topbar.hidden = !connected;
   accountMenu.hidden = !connected;
   if (!connected) accountMenu.open = false;
   connectionState.textContent = connected ? "Connecté" : "Déconnecté";
@@ -665,8 +667,7 @@ setupForm.addEventListener("submit", async (event) => {
     setupPanel.hidden = true;
     loginPanel.hidden = false;
     document.querySelector("#username").value = username;
-    document.querySelector("#login-error").textContent =
-      "Compte créé. Connectez-vous avec le mot de passe que vous venez de définir.";
+    document.querySelector("#login-error").textContent = "";
     setupForm.reset();
     document.querySelector("#password").focus();
   } catch (error) {
@@ -804,10 +805,8 @@ document.querySelector("#delete-incident").addEventListener("click", async (even
 });
 
 async function initializeDashboard() {
-  const loginError = document.querySelector("#login-error");
   if (sessionStorage.getItem("soc-password-changed")) {
     sessionStorage.removeItem("soc-password-changed");
-    loginError.textContent = "Mot de passe modifié. Reconnectez-vous.";
   }
   try {
     const response = await fetch("/api/setup/status", { cache: "no-store" });

@@ -3,14 +3,12 @@ package soc
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,15 +28,25 @@ type vulnerableSoftware struct {
 type vulnerabilityInventory struct {
 	AgentID         string               `json:"agent_id"`
 	AgentName       string               `json:"agent_name,omitempty"`
+	AgentIP         string               `json:"agent_ip,omitempty"`
+	OSName          string               `json:"os_name,omitempty"`
+	OSPlatform      string               `json:"os_platform,omitempty"`
+	OSVersion       string               `json:"os_version,omitempty"`
+	Search          string               `json:"search"`
 	TotalDetections int                  `json:"total_detections"`
 	Truncated       bool                 `json:"truncated"`
 	Software        []vulnerableSoftware `json:"software"`
 }
 
+var errAmbiguousAgentSearch = errors.New("plusieurs agents correspondent à cette recherche")
+
 func (b *Backend) vulnerabilitiesHandler(w http.ResponseWriter, r *http.Request) {
-	agentID := strings.TrimSpace(r.URL.Query().Get("agent_id"))
-	if agentID == "" || len(agentID) > 128 {
-		writeError(w, http.StatusBadRequest, "agent_id est obligatoire et ne doit pas dépasser 128 caractères")
+	searchTerm := strings.TrimSpace(r.URL.Query().Get("search"))
+	if searchTerm == "" {
+		searchTerm = strings.TrimSpace(r.URL.Query().Get("agent_id"))
+	}
+	if searchTerm == "" || len(searchTerm) > 128 {
+		writeError(w, http.StatusBadRequest, "la recherche est obligatoire et ne doit pas dépasser 128 caractères")
 		return
 	}
 
@@ -59,8 +67,12 @@ func (b *Backend) vulnerabilitiesHandler(w http.ResponseWriter, r *http.Request)
 		source.VulnerabilitiesIndex = defaultVulnerabilitiesIndex
 	}
 
-	inventory, err := b.fetchVulnerabilityInventory(r.Context(), *source, agentID)
+	inventory, err := b.fetchVulnerabilityInventory(r.Context(), *source, searchTerm)
 	if err != nil {
+		if errors.Is(err, errAmbiguousAgentSearch) {
+			writeError(w, http.StatusConflict, "plusieurs agents correspondent ; utilisez l’ID ou l’adresse IP exacte")
+			return
+		}
 		var responseError *wazuhHTTPError
 		if errors.As(err, &responseError) {
 			message := fmt.Sprintf("Wazuh Indexer a répondu HTTP %d lors de la lecture de l’inventaire.", responseError.statusCode)
@@ -75,101 +87,108 @@ func (b *Backend) vulnerabilitiesHandler(w http.ResponseWriter, r *http.Request)
 			writeError(w, http.StatusBadGateway, message)
 			return
 		}
-		log.Printf("lecture de l’inventaire des vulnérabilités pour l’agent %q: %v", agentID, err)
+		log.Printf("lecture de l’inventaire des vulnérabilités pour %q: %v", searchTerm, err)
 		writeError(w, http.StatusBadGateway, "impossible de lire l’inventaire des vulnérabilités dans Wazuh Indexer")
 		return
 	}
 	writeJSON(w, http.StatusOK, inventory)
 }
 
-func (b *Backend) fetchVulnerabilityInventory(ctx context.Context, source WazuhSource, agentID string) (vulnerabilityInventory, error) {
+func (b *Backend) fetchVulnerabilityInventory(ctx context.Context, source WazuhSource, searchTerm string) (vulnerabilityInventory, error) {
 	index := source.VulnerabilitiesIndex
 	if index == "" {
 		index = defaultVulnerabilitiesIndex
 	}
-	base, err := url.Parse(strings.TrimRight(source.URL, "/"))
-	if err != nil {
-		return vulnerabilityInventory{}, fmt.Errorf("analyser l’URL de l’Indexer: %w", err)
+	vulnerabilityFields := []string{
+		"agent.id", "agent.name", "agent.ip",
+		"package.name", "package.version",
+		"vulnerability.severity", "vulnerability.score.base",
+		"host.name", "host.ip", "host.os.platform", "host.os.type",
+		"host.os.name", "host.os.full", "host.os.version",
 	}
-	indexPath := strings.ReplaceAll(url.PathEscape(index), "%2A", "*")
-	base.Path = strings.TrimRight(base.Path, "/") + "/" + indexPath + "/_search"
-	query, err := json.Marshal(map[string]any{
+	query := map[string]any{
 		"size":             maxVulnerabilityDocuments,
 		"track_total_hits": true,
-		"_source":          []string{"agent.id", "agent.name", "package.name", "package.version", "vulnerability.severity", "vulnerability.score.base"},
+		"_source":          vulnerabilityFields,
 		"sort":             []any{map[string]any{"vulnerability.score.base": map[string]string{"order": "desc", "missing": "_last"}}},
-		"query": map[string]any{
-			"term": map[string]string{"agent.id": agentID},
-		},
-	})
+		"query":            agentSearchQuery(searchTerm),
+	}
+	result, err := b.searchWazuhIndex(ctx, source, index, query)
 	if err != nil {
-		return vulnerabilityInventory{}, fmt.Errorf("encoder la requête de vulnérabilités: %w", err)
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, base.String(), bytes.NewReader(query))
-	if err != nil {
-		return vulnerabilityInventory{}, fmt.Errorf("créer la requête de vulnérabilités: %w", err)
-	}
-	request.SetBasicAuth(source.Username, source.Password)
-	request.Header.Set("Content-Type", "application/json")
-
-	client := b.httpClient
-	if source.VerifyTLS != nil && !*source.VerifyTLS {
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-		client = &http.Client{Timeout: b.httpClient.Timeout, Transport: transport}
-	}
-	response, err := client.Do(request)
-	if err != nil {
-		return vulnerabilityInventory{}, fmt.Errorf("contacter Wazuh Indexer: %w", err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return vulnerabilityInventory{}, &wazuhHTTPError{statusCode: response.StatusCode}
+		return vulnerabilityInventory{}, err
 	}
 
-	var result struct {
-		Hits struct {
-			Total json.RawMessage `json:"total"`
-			Hits  []struct {
-				Source map[string]any `json:"_source"`
-			} `json:"hits"`
-		} `json:"hits"`
-	}
-	decoder := json.NewDecoder(io.LimitReader(response.Body, maxRequestBytes*10))
-	decoder.UseNumber()
-	if err := decoder.Decode(&result); err != nil {
-		return vulnerabilityInventory{}, fmt.Errorf("décoder l’inventaire des vulnérabilités: %w", err)
-	}
-
-	total := len(result.Hits.Hits)
-	truncated := false
-	if len(result.Hits.Total) > 0 {
-		var totalValue struct {
-			Value    int    `json:"value"`
-			Relation string `json:"relation"`
+	agents := vulnerabilityAgents(result.Hits.Hits)
+	if len(agents) == 0 {
+		alertsIndex := source.AlertsIndex
+		if alertsIndex == "" {
+			alertsIndex = "wazuh-alerts-*"
 		}
-		if err := json.Unmarshal(result.Hits.Total, &totalValue); err == nil {
-			total = totalValue.Value
-			truncated = totalValue.Relation == "gte"
-		} else {
-			var numericTotal int
-			if err := json.Unmarshal(result.Hits.Total, &numericTotal); err == nil {
-				total = numericTotal
+		agentResult, err := b.searchWazuhIndex(ctx, source, alertsIndex, map[string]any{
+			"size": 1000,
+			"_source": []string{
+				"agent.id", "agent.name", "agent.ip", "host.name", "host.ip",
+			},
+			"sort":  []any{map[string]any{"timestamp": map[string]string{"order": "desc"}}},
+			"query": agentSearchQuery(searchTerm),
+		})
+		if err != nil {
+			return vulnerabilityInventory{}, err
+		}
+		agents = vulnerabilityAgents(agentResult.Hits.Hits)
+		if len(agents) == 1 {
+			query["query"] = map[string]any{"term": map[string]string{"agent.id": agents[0].ID}}
+			result, err = b.searchWazuhIndex(ctx, source, index, query)
+			if err != nil {
+				return vulnerabilityInventory{}, err
 			}
 		}
 	}
+	if len(agents) > 1 {
+		return vulnerabilityInventory{}, errAmbiguousAgentSearch
+	}
+	if len(agents) == 0 {
+		return vulnerabilityInventory{
+			Search:   searchTerm,
+			Software: []vulnerableSoftware{},
+		}, nil
+	}
 
+	total, truncated := wazuhHitsTotal(result.Hits.Total, len(result.Hits.Hits))
 	inventory := vulnerabilityInventory{
-		AgentID:         agentID,
+		AgentID:         searchTerm,
+		Search:          searchTerm,
 		TotalDetections: total,
 		Truncated:       truncated || total > len(result.Hits.Hits),
 		Software:        []vulnerableSoftware{},
 	}
+	if len(agents) == 1 {
+		inventory.AgentID = agents[0].ID
+		inventory.AgentName = agents[0].Name
+		inventory.AgentIP = agents[0].IP
+	}
 	softwareByKey := make(map[string]*vulnerableSoftware)
 	for _, hit := range result.Hits.Hits {
-		agentName := nestedString(hit.Source, "agent", "name")
-		if inventory.AgentName == "" && agentName != "" {
-			inventory.AgentName = agentName
+		if inventory.AgentIP == "" {
+			inventory.AgentIP = firstString(
+				nestedString(hit.Source, "agent", "ip"),
+				nestedString(hit.Source, "host", "ip"),
+			)
+		}
+		if inventory.OSName == "" {
+			inventory.OSName = firstString(
+				nestedString(hit.Source, "host", "os", "name"),
+				nestedString(hit.Source, "host", "os", "full"),
+			)
+		}
+		if inventory.OSPlatform == "" {
+			inventory.OSPlatform = firstString(
+				nestedString(hit.Source, "host", "os", "platform"),
+				nestedString(hit.Source, "host", "os", "type"),
+			)
+		}
+		if inventory.OSVersion == "" {
+			inventory.OSVersion = nestedString(hit.Source, "host", "os", "version")
 		}
 		name := nestedString(hit.Source, "package", "name")
 		version := nestedString(hit.Source, "package", "version")
@@ -218,6 +237,132 @@ func (b *Backend) fetchVulnerabilityInventory(ctx context.Context, source WazuhS
 		return left.Version < right.Version
 	})
 	return inventory, nil
+}
+
+type wazuhSearchHit struct {
+	Source map[string]any `json:"_source"`
+}
+
+type wazuhSearchResponse struct {
+	Hits struct {
+		Total json.RawMessage  `json:"total"`
+		Hits  []wazuhSearchHit `json:"hits"`
+	} `json:"hits"`
+}
+
+type vulnerabilityAgent struct {
+	ID   string
+	Name string
+	IP   string
+}
+
+func (b *Backend) searchWazuhIndex(ctx context.Context, source WazuhSource, index string, query map[string]any) (wazuhSearchResponse, error) {
+	endpoint, err := wazuhIndexSearchURL(source.URL, index)
+	if err != nil {
+		return wazuhSearchResponse{}, err
+	}
+	body, err := json.Marshal(query)
+	if err != nil {
+		return wazuhSearchResponse{}, fmt.Errorf("encoder la requête Wazuh: %w", err)
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return wazuhSearchResponse{}, fmt.Errorf("créer la requête Wazuh: %w", err)
+	}
+	request.SetBasicAuth(source.Username, source.Password)
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := b.wazuhHTTPClient(source).Do(request)
+	if err != nil {
+		return wazuhSearchResponse{}, fmt.Errorf("contacter Wazuh Indexer: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return wazuhSearchResponse{}, &wazuhHTTPError{statusCode: response.StatusCode}
+	}
+
+	var result wazuhSearchResponse
+	decoder := json.NewDecoder(io.LimitReader(response.Body, maxRequestBytes*10))
+	decoder.UseNumber()
+	if err := decoder.Decode(&result); err != nil {
+		return wazuhSearchResponse{}, fmt.Errorf("décoder la réponse Wazuh: %w", err)
+	}
+	return result, nil
+}
+
+func (b *Backend) checkWazuhVulnerabilityIndex(ctx context.Context, source WazuhSource) error {
+	index := source.VulnerabilitiesIndex
+	if index == "" {
+		index = defaultVulnerabilitiesIndex
+	}
+	_, err := b.searchWazuhIndex(ctx, source, index, map[string]any{
+		"size":  0,
+		"query": map[string]any{"match_all": map[string]any{}},
+	})
+	return err
+}
+
+func agentSearchQuery(searchTerm string) map[string]any {
+	return map[string]any{
+		"bool": map[string]any{
+			"should": []any{
+				map[string]any{"term": map[string]string{"agent.id": searchTerm}},
+				map[string]any{"match_phrase": map[string]string{"agent.name": searchTerm}},
+				map[string]any{"match_phrase": map[string]string{"host.name": searchTerm}},
+				map[string]any{"term": map[string]string{"agent.ip": searchTerm}},
+				map[string]any{"term": map[string]string{"host.ip": searchTerm}},
+			},
+			"minimum_should_match": 1,
+		},
+	}
+}
+
+func vulnerabilityAgents(hits []wazuhSearchHit) []vulnerabilityAgent {
+	byID := make(map[string]vulnerabilityAgent)
+	for _, hit := range hits {
+		id := nestedString(hit.Source, "agent", "id")
+		if id == "" {
+			continue
+		}
+		agent := byID[id]
+		agent.ID = id
+		if agent.Name == "" {
+			agent.Name = firstString(
+				nestedString(hit.Source, "agent", "name"),
+				nestedString(hit.Source, "host", "name"),
+			)
+		}
+		if agent.IP == "" {
+			agent.IP = firstString(
+				nestedString(hit.Source, "agent", "ip"),
+				nestedString(hit.Source, "host", "ip"),
+			)
+		}
+		byID[id] = agent
+	}
+	agents := make([]vulnerabilityAgent, 0, len(byID))
+	for _, agent := range byID {
+		agents = append(agents, agent)
+	}
+	return agents
+}
+
+func wazuhHitsTotal(raw json.RawMessage, hitCount int) (int, bool) {
+	if len(raw) == 0 {
+		return hitCount, false
+	}
+	var result struct {
+		Value    int    `json:"value"`
+		Relation string `json:"relation"`
+	}
+	if err := json.Unmarshal(raw, &result); err == nil {
+		return result.Value, result.Relation == "gte"
+	}
+	var total int
+	if err := json.Unmarshal(raw, &total); err == nil {
+		return total, false
+	}
+	return hitCount, false
 }
 
 func nestedString(value map[string]any, keys ...string) string {

@@ -82,6 +82,25 @@ func newHTTPClient() *http.Client {
 	return &http.Client{Timeout: 30 * time.Second}
 }
 
+func (b *Backend) wazuhHTTPClient(source WazuhSource) *http.Client {
+	if source.VerifyTLS == nil || *source.VerifyTLS {
+		return b.httpClient
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	return &http.Client{Timeout: b.httpClient.Timeout, Transport: transport}
+}
+
+func wazuhIndexSearchURL(origin, index string) (string, error) {
+	base, err := url.Parse(strings.TrimRight(origin, "/"))
+	if err != nil {
+		return "", fmt.Errorf("analyser l’URL de l’Indexer: %w", err)
+	}
+	indexPath := strings.ReplaceAll(url.PathEscape(index), "%2A", "*")
+	base.Path = strings.TrimRight(base.Path, "/") + "/" + indexPath + "/_search"
+	return base.String(), nil
+}
+
 func newID() (string, error) {
 	var value [16]byte
 	if _, err := rand.Read(value[:]); err != nil {
@@ -363,12 +382,10 @@ func (b *Backend) pollWazuh(ctx context.Context, source WazuhSource) (pollErr er
 		b.wazuhStatusMu.Unlock()
 	}()
 
-	base, err := url.Parse(strings.TrimRight(source.URL, "/"))
+	endpoint, err := wazuhIndexSearchURL(source.URL, source.AlertsIndex)
 	if err != nil {
-		return fmt.Errorf("analyser l'URL de l'Indexer: %w", err)
+		return err
 	}
-	indexPath := strings.ReplaceAll(url.PathEscape(source.AlertsIndex), "%2A", "*")
-	base.Path = strings.TrimRight(base.Path, "/") + "/" + indexPath + "/_search"
 	clearedAt, err := b.alertsClearedAt(ctx)
 	if err != nil {
 		return err
@@ -387,20 +404,14 @@ func (b *Backend) pollWazuh(ctx context.Context, source WazuhSource) (pollErr er
 	if err != nil {
 		return fmt.Errorf("encoder la requête Wazuh: %w", err)
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, base.String(), bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("créer la requête Wazuh: %w", err)
 	}
 	request.SetBasicAuth(source.Username, source.Password)
 	request.Header.Set("Content-Type", "application/json")
 
-	client := b.httpClient
-	if source.VerifyTLS != nil && !*source.VerifyTLS {
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-		client = &http.Client{Timeout: b.httpClient.Timeout, Transport: transport}
-	}
-	response, err := client.Do(request)
+	response, err := b.wazuhHTTPClient(source).Do(request)
 	if err != nil {
 		return fmt.Errorf("contacter Wazuh Indexer: %w", err)
 	}

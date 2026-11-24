@@ -68,6 +68,38 @@ func loginAdmin(t *testing.T, server *httptest.Server) string {
 	return result.Token
 }
 
+func TestLoginPanelOnlyShowsCredentialFields(t *testing.T) {
+	page, err := dashboardFiles.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(page)
+	start := strings.Index(content, `<section class="panel login-panel" id="login-panel"`)
+	if start < 0 {
+		t.Fatal("login panel was not found")
+	}
+	end := strings.Index(content[start:], "</section>")
+	if end < 0 {
+		t.Fatal("login panel is not closed")
+	}
+	loginPanel := content[start : start+end]
+	for _, field := range []string{
+		`name="username"`, `name="password"`, "Nom d’utilisateur", "Mot de passe", "Se connecter",
+	} {
+		if !strings.Contains(loginPanel, field) {
+			t.Errorf("login panel is missing %q", field)
+		}
+	}
+	for _, information := range []string{"<h2>", "Connectez-vous avec", "help-tip"} {
+		if strings.Contains(loginPanel, information) {
+			t.Errorf("login panel contains additional information %q", information)
+		}
+	}
+	if !strings.Contains(content, `<header class="topbar" id="topbar" hidden>`) {
+		t.Fatal("dashboard header is visible before authentication")
+	}
+}
+
 func TestFirstRunAdminSetupAndLegacyPasswordMigration(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "soc.db")
 	config := Config{
@@ -1693,10 +1725,25 @@ func TestWazuhConfigurationIsTestedAndPersisted(t *testing.T) {
 		backend.Close()
 		t.Fatal(err)
 	}
+	var alertIndexChecks, vulnerabilityIndexChecks atomic.Int32
 	wazuh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		username, password, ok := r.BasicAuth()
 		if !ok || username != "reader" || password != "test-password" {
 			t.Errorf("unexpected Wazuh credentials")
+		}
+		switch {
+		case strings.Contains(r.URL.Path, "wazuh-alerts-*/_search"):
+			alertIndexChecks.Add(1)
+		case strings.Contains(r.URL.Path, defaultVulnerabilitiesIndex+"/_search"):
+			vulnerabilityIndexChecks.Add(1)
+			var query map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&query); err != nil {
+				t.Errorf("decode vulnerability index access check: %v", err)
+			} else if query["size"] != float64(0) {
+				t.Errorf("vulnerability access check size = %#v, want 0", query["size"])
+			}
+		default:
+			t.Errorf("unexpected Wazuh index path %q", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"hits":{"hits":[]}}`))
@@ -1733,6 +1780,10 @@ func TestWazuhConfigurationIsTestedAndPersisted(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("save Wazuh configuration = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	if alertIndexChecks.Load() != 1 || vulnerabilityIndexChecks.Load() != 1 {
+		t.Fatalf("Wazuh index checks = alerts:%d vulnerabilities:%d, want one each",
+			alertIndexChecks.Load(), vulnerabilityIndexChecks.Load())
 	}
 
 	request, err = http.NewRequest(http.MethodGet, server.URL+"/api/admin/wazuh", nil)
@@ -1778,6 +1829,50 @@ func TestWazuhConfigurationIsTestedAndPersisted(t *testing.T) {
 	if len(sources) != 1 || sources[0].Username != "reader" || sources[0].Password != "test-password" ||
 		sources[0].VulnerabilitiesIndex != defaultVulnerabilitiesIndex {
 		t.Fatalf("persisted Wazuh configuration = %#v", sources)
+	}
+}
+
+func TestWazuhConfigurationRejectsUnreadableVulnerabilityIndex(t *testing.T) {
+	backend := testBackend(t, "")
+	wazuh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, defaultVulnerabilitiesIndex+"/_search") {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"error":"forbidden"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"hits":{"hits":[]}}`))
+	}))
+	defer wazuh.Close()
+	server := httptest.NewServer(backend.Handler())
+	defer server.Close()
+
+	request, err := http.NewRequest(http.MethodPut, server.URL+"/api/admin/wazuh", jsonBody(map[string]any{
+		"url": wazuh.URL, "username": "reader", "password": "test-password",
+		"verify_tls": true, "alerts_index": "wazuh-alerts-*",
+		"vulnerabilities_index": defaultVulnerabilitiesIndex, "batch_size": 100,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+loginAdmin(t, server))
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var result map[string]string
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusBadGateway ||
+		!strings.Contains(result["error"], "HTTP 403") ||
+		!strings.Contains(result["error"], "index des vulnérabilités") {
+		t.Fatalf("configuration with unreadable vulnerability index = (%d, %#v)",
+			response.StatusCode, result)
+	}
+	if len(backend.wazuhSources()) != 0 {
+		t.Fatal("Wazuh configuration was saved despite missing vulnerability-index access")
 	}
 }
 
@@ -1946,10 +2041,25 @@ func TestVulnerabilityInventorySearchReturnsPrioritizedSoftwareOnly(t *testing.T
 				}
 			}
 			filter, ok := query["query"].(map[string]any)
-			if !ok || filter["term"] == nil {
+			boolFilter, hasBool := filter["bool"].(map[string]any)
+			should, hasShould := boolFilter["should"].([]any)
+			if !ok || !hasBool || !hasShould {
 				t.Errorf("Wazuh query does not filter by agent ID: %#v", query)
-			} else if term, ok := filter["term"].(map[string]any); !ok || term["agent.id"] != "007" {
-				t.Errorf("Wazuh query agent filter = %#v, want ID 007", filter["term"])
+			} else {
+				hasAgentID := false
+				for _, clause := range should {
+					condition, ok := clause.(map[string]any)
+					if !ok {
+						continue
+					}
+					term, ok := condition["term"].(map[string]any)
+					if ok && term["agent.id"] == "007" {
+						hasAgentID = true
+					}
+				}
+				if !hasAgentID {
+					t.Errorf("Wazuh query does not match agent ID 007: %#v", should)
+				}
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -1972,7 +2082,7 @@ func TestVulnerabilityInventorySearchReturnsPrioritizedSoftwareOnly(t *testing.T
 	server := httptest.NewServer(backend.Handler())
 	defer server.Close()
 	request, err := http.NewRequest(http.MethodGet,
-		server.URL+"/api/vulnerabilities?agent_id=007", nil)
+		server.URL+"/api/vulnerabilities?search=007", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2031,6 +2141,70 @@ func TestVulnerabilityInventorySearchReturnsPrioritizedSoftwareOnly(t *testing.T
 	assetResponse.Body.Close()
 	if assetResponse.StatusCode != http.StatusOK {
 		t.Fatalf("vulnerability JavaScript status = %d, want %d", assetResponse.StatusCode, http.StatusOK)
+	}
+}
+
+func TestVulnerabilitySearchResolvesAgentByIPAndReturnsOS(t *testing.T) {
+	backend := testBackend(t, "")
+	verifyTLS := true
+	var vulnerabilityQueries atomic.Int32
+	wazuh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, defaultVulnerabilitiesIndex+"/_search"):
+			queryNumber := vulnerabilityQueries.Add(1)
+			if queryNumber == 1 {
+				_, _ = w.Write([]byte(`{"hits":{"total":{"value":0,"relation":"eq"},"hits":[]}}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"hits":{"total":{"value":1,"relation":"eq"},"hits":[
+				{"_source":{"agent":{"id":"007","name":"poste-test"},"host":{"os":{"name":"Debian GNU/Linux","platform":"debian","version":"12"}},"package":{"name":"openssl","version":"3.0.11"},"vulnerability":{"severity":"High","score":{"base":8.0}}}}
+			]}}`))
+		case strings.Contains(r.URL.Path, "wazuh-alerts-*/_search"):
+			var query map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&query); err != nil {
+				t.Errorf("decode alert-index agent lookup: %v", err)
+			} else if !strings.Contains(fmt.Sprint(query["query"]), "agent.ip") {
+				t.Errorf("alert-index lookup does not search by IP: %#v", query)
+			}
+			_, _ = w.Write([]byte(`{"hits":{"total":{"value":1,"relation":"eq"},"hits":[
+				{"_source":{"agent":{"id":"007","name":"poste-test","ip":"192.0.2.7"}}}
+			]}}`))
+		default:
+			t.Errorf("unexpected Wazuh index path %q", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer wazuh.Close()
+	if err := backend.setWazuhSources(context.Background(), []WazuhSource{{
+		TenantID: "tenant-a", URL: wazuh.URL, Username: "reader", Password: "test-password",
+		VerifyTLS: &verifyTLS, AlertsIndex: "wazuh-alerts-*",
+		VulnerabilitiesIndex: defaultVulnerabilitiesIndex, BatchSize: 100,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(backend.Handler())
+	defer server.Close()
+	request, err := http.NewRequest(http.MethodGet,
+		server.URL+"/api/vulnerabilities?search=192.0.2.7", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+loginAdmin(t, server))
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var inventory vulnerabilityInventory
+	if err := json.NewDecoder(response.Body).Decode(&inventory); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || inventory.AgentID != "007" ||
+		inventory.AgentName != "poste-test" || inventory.AgentIP != "192.0.2.7" ||
+		inventory.OSName != "Debian GNU/Linux" || inventory.OSPlatform != "debian" ||
+		inventory.OSVersion != "12" || len(inventory.Software) != 1 {
+		t.Fatalf("inventory resolved by IP = (%d, %#v)", response.StatusCode, inventory)
 	}
 }
 
