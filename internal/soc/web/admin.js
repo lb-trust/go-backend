@@ -269,6 +269,7 @@ if (wazuhForm) {
 const clearAlertsForm = document.querySelector("#clear-alerts-form");
 if (clearAlertsForm) {
   const message = document.querySelector("#clear-alerts-message");
+  const loading = document.querySelector("#clear-alerts-loading");
   clearAlertsForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!window.confirm(
@@ -277,6 +278,9 @@ if (clearAlertsForm) {
 
     const button = clearAlertsForm.querySelector("button[type='submit']");
     button.disabled = true;
+    clearAlertsForm.setAttribute("aria-busy", "true");
+    loading.hidden = false;
+    showMessage(message, "");
     try {
       await adminAPI("/api/admin/alerts", {
         method: "DELETE",
@@ -285,11 +289,13 @@ if (clearAlertsForm) {
         }),
       });
       clearAlertsForm.reset();
-      showMessage(message, "Toutes les alertes et les données associées ont été supprimées.", true);
+      showMessage(message, "Toutes les alertes et les données associées ont été supprimées. Le système est réinitialisé.", true);
     } catch (error) {
       showMessage(message, error.message);
     } finally {
       document.querySelector("#clear-alerts-password").value = "";
+      loading.hidden = true;
+      clearAlertsForm.setAttribute("aria-busy", "false");
       button.disabled = false;
     }
   });

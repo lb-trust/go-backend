@@ -101,6 +101,9 @@ func TestLoginPanelOnlyShowsCredentialFields(t *testing.T) {
 	if !strings.Contains(content, `<div class="header-status" id="header-actions" hidden>`) {
 		t.Fatal("dashboard actions are visible before authentication")
 	}
+	if strings.Contains(content, `id="wazuh-state"`) {
+		t.Fatal("Wazuh status is still shown in the dashboard header")
+	}
 }
 
 func TestFirstRunAdminSetupAndLegacyPasswordMigration(t *testing.T) {

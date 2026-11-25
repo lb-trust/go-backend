@@ -124,39 +124,6 @@ function formatStatusTime(value) {
   return new Date(value).toLocaleString("fr-FR");
 }
 
-function renderWazuhStatus(status) {
-  const indicator = document.querySelector("#wazuh-state");
-  indicator.className = "wazuh-status";
-  if (!status.configured) {
-    indicator.textContent = "Wazuh : non configuré";
-    indicator.classList.add("unavailable");
-    indicator.title = "Cliquer pour consulter le diagnostic Wazuh.";
-    return;
-  }
-  const lines = status.sources.map((source) => {
-    const label = source.alerts_index;
-    if (source.state === "unknown") {
-      return `${label} : en attente du premier contrôle`;
-    }
-    if (source.state === "error") {
-      return `${label} : erreur de connexion — ${source.error}`;
-    }
-    if (source.state === "receiving") {
-      return `${label} : alertes reçues (${source.alerts_received} au dernier contrôle), dernière alerte ${formatStatusTime(source.last_alert)}`;
-    }
-    return `${label} : connexion OK, aucune alerte récente (dernier contrôle ${formatStatusTime(source.last_check)}, dernière alerte ${formatStatusTime(source.last_alert)})`;
-  });
-  const hasError = status.sources.some((source) => source.state === "error");
-  const receiving = status.sources.some((source) => source.state === "receiving");
-  indicator.textContent = hasError
-    ? "Wazuh : erreur"
-    : receiving
-      ? "Wazuh : alertes reçues"
-      : "Wazuh : connecté";
-  indicator.classList.add(hasError ? "error" : receiving ? "online" : "idle");
-  indicator.title = `Cliquer pour consulter le diagnostic Wazuh.\n${lines.join("\n")}`;
-}
-
 function disconnect() {
   sessionStorage.removeItem(tokenKey);
   configuredGroups = null;
@@ -578,12 +545,10 @@ async function refreshDashboard() {
     const status = selectedFilterValue("status-filter");
     const query = new URLSearchParams({ limit: "500" });
     if (status) query.set("status", status);
-    const [incidents, control, wazuhStatus] = await Promise.all([
+    const [incidents, control] = await Promise.all([
       api(`/api/incidents?${query}`),
       api("/api/control/ai"),
-      api("/api/wazuh/status"),
     ]);
-    renderWazuhStatus(wazuhStatus);
     const queue = control.queue;
     latestQueuedIncidentIDs = new Set(
       queue
