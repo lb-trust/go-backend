@@ -109,6 +109,25 @@ type Incident struct {
 	PrimaryOccurrenceTimes []time.Time `json:"primary_occurrence_times"`
 }
 
+type IncidentListFilters struct {
+	Status       string
+	Severity     string
+	Search       string
+	Groups       []string
+	FilterGroups bool
+	MinLevel     *int
+	From         *time.Time
+	To           *time.Time
+}
+
+type IncidentPage struct {
+	Items   []Incident `json:"items"`
+	Total   int        `json:"total"`
+	Offset  int        `json:"offset"`
+	Limit   int        `json:"limit"`
+	HasMore bool       `json:"has_more"`
+}
+
 type DatabaseStorageStats struct {
 	DatabaseBytes int64 `json:"database_bytes"`
 	WALBytes      int64 `json:"wal_bytes"`
@@ -796,40 +815,127 @@ func (b *Backend) ListAgentGroups(ctx context.Context, tenantID string) ([]strin
 }
 
 func (b *Backend) ListIncidents(ctx context.Context, tenantID, status string, limit int) ([]Incident, error) {
-	query := `SELECT id, tenant_id, title, status, severity, score, agent_id, source_ip,
-	                 rule_level, primary_alert_id, occurrences, created_at, updated_at, feedback_json, analysis,
-	                 COALESCE((SELECT ag.agent_name FROM incident_alerts ia
-	                           JOIN alert_groups ag ON ag.id = ia.alert_id
-	                          WHERE ia.incident_id = i.id
-	                          ORDER BY ag.last_seen DESC
-	                           LIMIT 1), ''),
-	                 COALESCE((SELECT ag.raw_json FROM incident_alerts ia
-	                           JOIN alert_groups ag ON ag.id = ia.alert_id
-	                          WHERE ia.incident_id = i.id
-	                          ORDER BY ag.last_seen DESC
-	                           LIMIT 1), '{}')
-	          FROM incidents i WHERE i.tenant_id = ?`
-	args := []any{tenantID}
-	if status != "" {
-		query += ` AND status = ?`
-		args = append(args, status)
-	}
-	query += ` ORDER BY updated_at DESC LIMIT ?`
-	args = append(args, limit)
-	rows, err := b.db.QueryContext(ctx, query, args...)
+	page, err := b.ListIncidentsPage(ctx, tenantID, IncidentListFilters{Status: status}, limit, 0)
 	if err != nil {
-		return nil, fmt.Errorf("lister les incidents: %w", err)
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+func (b *Backend) ListIncidentsPage(
+	ctx context.Context,
+	tenantID string,
+	filters IncidentListFilters,
+	limit, offset int,
+) (IncidentPage, error) {
+	if limit < 1 || offset < 0 {
+		return IncidentPage{}, errors.New("limite et offset invalides")
+	}
+	where := []string{"i.tenant_id = ?"}
+	args := []any{tenantID}
+	if filters.Status != "" {
+		where = append(where, "i.status = ?")
+		args = append(args, filters.Status)
+	}
+	if filters.Severity != "" {
+		where = append(where, "i.severity = ?")
+		args = append(args, filters.Severity)
+	}
+	if filters.MinLevel != nil {
+		where = append(where, "i.rule_level >= ?")
+		args = append(args, *filters.MinLevel)
+	}
+	if filters.From != nil {
+		where = append(where, "i.created_at >= ?")
+		args = append(args, formatDatabaseTime(*filters.From))
+	}
+	if filters.To != nil {
+		where = append(where, "i.created_at < ?")
+		args = append(args, formatDatabaseTime(*filters.To))
+	}
+	if filters.Search != "" {
+		escaped := strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(filters.Search)
+		pattern := "%" + escaped + "%"
+		where = append(where, `(
+			i.title LIKE ? ESCAPE '!' OR i.agent_id LIKE ? ESCAPE '!' OR
+			i.source_ip LIKE ? ESCAPE '!' OR current_agent.agent_name LIKE ? ESCAPE '!' OR
+			current_agent.agent_id LIKE ? ESCAPE '!' OR current_agent.source_ip LIKE ? ESCAPE '!' OR
+			current_agent.raw_json LIKE ? ESCAPE '!'
+		)`)
+		for range 7 {
+			args = append(args, pattern)
+		}
+	}
+	if filters.FilterGroups {
+		if len(filters.Groups) == 0 {
+			where = append(where, "0 = 1")
+		} else {
+			placeholders := strings.TrimSuffix(strings.Repeat("?,", len(filters.Groups)), ",")
+			groupFilters := make([]string, 0, 4)
+			for _, path := range []string{
+				"$.agent.labels.group",
+				"$.agent.groups",
+				"$._source.agent.labels.group",
+				"$._source.agent.groups",
+			} {
+				groupFilters = append(groupFilters, `EXISTS (
+					SELECT 1 FROM json_each(current_agent.raw_json, '`+path+`') AS selected_group
+					WHERE selected_group.value IN (`+placeholders+`)
+				)`)
+				for _, group := range filters.Groups {
+					args = append(args, group)
+				}
+			}
+			where = append(where, "("+strings.Join(groupFilters, " OR ")+")")
+		}
+	}
+
+	const fromQuery = ` FROM incidents i
+		LEFT JOIN alert_groups current_agent ON current_agent.id = (
+			SELECT ag.id FROM incident_alerts ia
+			JOIN alert_groups ag ON ag.id = ia.alert_id
+			WHERE ia.incident_id = i.id
+			ORDER BY ag.last_seen DESC, ag.id DESC
+			LIMIT 1
+		)`
+	whereQuery := strings.Join(where, " AND ")
+	var total int
+	if err := b.db.QueryRowContext(ctx, "SELECT COUNT(*)"+fromQuery+" WHERE "+whereQuery, args...).Scan(&total); err != nil {
+		return IncidentPage{}, fmt.Errorf("compter les incidents: %w", err)
+	}
+	if total == 0 {
+		offset = 0
+	} else if offset >= total {
+		offset = ((total - 1) / limit) * limit
+	}
+
+	query := `SELECT i.id, i.tenant_id, i.title, i.status, i.severity, i.score, i.agent_id, i.source_ip,
+	                 i.rule_level, i.primary_alert_id, i.occurrences, i.created_at, i.updated_at,
+	                 i.feedback_json, i.analysis, COALESCE(current_agent.agent_name, ''),
+	                 COALESCE(current_agent.raw_json, '{}')` +
+		fromQuery + " WHERE " + whereQuery +
+		" ORDER BY i.updated_at DESC, i.id DESC LIMIT ? OFFSET ?"
+	pageArgs := append(append([]any(nil), args...), limit, offset)
+	rows, err := b.db.QueryContext(ctx, query, pageArgs...)
+	if err != nil {
+		return IncidentPage{}, fmt.Errorf("lister les incidents: %w", err)
 	}
 	defer rows.Close()
 	incidents := make([]Incident, 0)
 	for rows.Next() {
 		incident, err := scanIncident(rows)
 		if err != nil {
-			return nil, err
+			return IncidentPage{}, err
 		}
 		incidents = append(incidents, incident)
 	}
-	return incidents, rows.Err()
+	if err := rows.Err(); err != nil {
+		return IncidentPage{}, fmt.Errorf("parcourir les incidents: %w", err)
+	}
+	return IncidentPage{
+		Items: incidents, Total: total, Offset: offset, Limit: limit,
+		HasMore: offset+len(incidents) < total,
+	}, nil
 }
 
 func scanIncident(scanner interface{ Scan(...any) error }) (Incident, error) {

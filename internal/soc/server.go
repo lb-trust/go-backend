@@ -10,7 +10,9 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 func (b *Backend) Handler() http.Handler {
@@ -272,22 +274,74 @@ func (b *Backend) ingestAlertHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Backend) listIncidentsHandler(w http.ResponseWriter, r *http.Request) {
-	limit, err := queryLimit(r, 100, 500)
+	limit, err := queryLimit(r, 50, 500)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	status := r.URL.Query().Get("status")
-	if status != "" && !isIncidentStatus(status) {
+	offset, err := queryOffset(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	query := r.URL.Query()
+	filters := IncidentListFilters{
+		Status:       query.Get("status"),
+		Severity:     query.Get("severity"),
+		Search:       strings.TrimSpace(query.Get("q")),
+		FilterGroups: query.Get("group_filter") == "true",
+	}
+	if filters.Status != "" && !isIncidentStatus(filters.Status) {
 		writeError(w, http.StatusBadRequest, "status invalide")
 		return
 	}
-	incidents, err := b.ListIncidents(r.Context(), tenantFromContext(r.Context()), status, limit)
+	if filters.Severity != "" && !isIncidentSeverity(filters.Severity) {
+		writeError(w, http.StatusBadRequest, "sévérité invalide")
+		return
+	}
+	if utf8.RuneCountInString(filters.Search) > 128 {
+		writeError(w, http.StatusBadRequest, "la recherche ne peut pas dépasser 128 caractères")
+		return
+	}
+	filters.Groups = uniqueNonEmpty(query["group"])
+	if len(filters.Groups) > 100 {
+		writeError(w, http.StatusBadRequest, "trop de groupes sélectionnés")
+		return
+	}
+	if raw := query.Get("min_level"); raw != "" {
+		level, err := strconv.Atoi(raw)
+		if err != nil || level < 0 || level > 15 {
+			writeError(w, http.StatusBadRequest, "min_level doit être compris entre 0 et 15")
+			return
+		}
+		filters.MinLevel = &level
+	}
+	filters.From, err = parseIncidentDate(query.Get("from"), "from")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	to, err := parseIncidentDate(query.Get("to"), "to")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if to != nil {
+		endExclusive := to.AddDate(0, 0, 1)
+		filters.To = &endExclusive
+	}
+	if filters.From != nil && filters.To != nil && !filters.From.Before(*filters.To) {
+		writeError(w, http.StatusBadRequest, "la date de début doit précéder la date de fin")
+		return
+	}
+	page, err := b.ListIncidentsPage(
+		r.Context(), tenantFromContext(r.Context()), filters, limit, offset,
+	)
 	if err != nil {
 		writeInternalError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, incidents)
+	writeJSON(w, http.StatusOK, page)
 }
 
 func (b *Backend) getIncidentHandler(w http.ResponseWriter, r *http.Request) {
@@ -414,6 +468,51 @@ func queryLimit(r *http.Request, fallback, maximum int) (int, error) {
 		return 0, fmt.Errorf("limit doit être compris entre 1 et %d", maximum)
 	}
 	return limit, nil
+}
+
+func queryOffset(r *http.Request) (int, error) {
+	raw := r.URL.Query().Get("offset")
+	if raw == "" {
+		return 0, nil
+	}
+	offset, err := strconv.Atoi(raw)
+	if err != nil || offset < 0 || offset > 10_000_000 {
+		return 0, errors.New("offset doit être compris entre 0 et 10000000")
+	}
+	return offset, nil
+}
+
+func parseIncidentDate(raw, field string) (*time.Time, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	value, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return nil, fmt.Errorf("%s doit être au format AAAA-MM-JJ", field)
+	}
+	return &value, nil
+}
+
+func uniqueNonEmpty(values []string) []string {
+	unique := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		unique = append(unique, value)
+	}
+	return unique
+}
+
+func isIncidentSeverity(severity string) bool {
+	return severity == "critical" || severity == "high" ||
+		severity == "medium" || severity == "low"
 }
 
 func decodeBody(w http.ResponseWriter, r *http.Request, destination any) error {

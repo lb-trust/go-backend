@@ -106,6 +106,7 @@ input, select { border: 1px solid #d0d5dd; border-radius: 7px; color: #172033; m
 .filter-panel-content { background: #fff; border: 1px solid #d0d5dd; border-radius: 10px; box-shadow: 0 8px 20px #1018281a; display: grid; gap: 14px 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); left: 0; padding: 16px; position: absolute; top: calc(100% + 8px); width: min(760px, calc(100vw - 32px)); z-index: 6; }
 .filter-panel-content > .client-picker, .filter-panel-content > .filter-control, .filter-panel-content > .column-picker-control { min-width: 0; }
 .filter-panel-content > .filter-control { gap: 6px; }
+.filter-panel-content .filter-control > input { min-width: 0; width: 100%; }
 .filter-label { align-items: center; display: flex; gap: 6px; }
 .filters .filter-label { color: #344054; font-size: .85rem; font-weight: 650; line-height: 1.2; }
 .client-picker, .column-picker-control { display: grid; gap: 6px; }
@@ -133,6 +134,9 @@ input, select { border: 1px solid #d0d5dd; border-radius: 7px; color: #172033; m
 .queue-caption .help-content { left: auto; right: 0; }
 .section-heading { margin-bottom: 15px; }
 .section-heading .eyebrow { margin-bottom: 3px; }
+.incident-pagination { align-items: center; display: flex; justify-content: center; gap: 14px; padding-top: 16px; }
+.incident-pagination[hidden] { display: none; }
+.incident-pagination button { min-width: 100px; }
 .table-wrap { overflow-x: auto; }
 table { border-collapse: collapse; min-width: 700px; text-align: left; width: 100%; }
 th { color: #667085; font-size: .76rem; font-weight: 700; }

@@ -59,15 +59,19 @@ const filtersPanel = document.querySelector("#dashboard-filters");
 const clientFilter = document.querySelector("#client-filter");
 const clientOptions = document.querySelector("#client-options");
 let visibleIncidentColumns = loadIncidentColumns();
-let latestIncidents = [];
+let latestIncidentPage = { items: [], total: 0, offset: 0, limit: 50, has_more: false };
 let latestAIEnabled = false;
 let latestQueuedIncidentIDs = new Set();
 let configuredGroups = null;
+let incidentPageOffset = 0;
+const incidentPageLimit = 50;
 let activeIncidentID = "";
 let activePrimaryAlert = null;
 let activePrimaryOccurrenceTimes = [];
 let incidentSort = null;
 let refreshTimer;
+let searchTimer;
+let dashboardRequestID = 0;
 
 function updateColumnFilterSummary() {
   const checkboxes = columnPicker.querySelectorAll("input");
@@ -95,7 +99,7 @@ for (const checkbox of columnPicker.querySelectorAll("input")) {
       .map((input) => input.value);
     localStorage.setItem(columnsKey, JSON.stringify(visibleIncidentColumns));
     updateColumnFilterSummary();
-    renderIncidents(latestIncidents, latestAIEnabled);
+    renderIncidents(latestIncidentPage, latestAIEnabled);
   });
 }
 updateColumnFilterSummary();
@@ -181,7 +185,7 @@ for (const filterID of ["status-filter", "severity-filter"]) {
     input.addEventListener("change", () => {
       filter.querySelector("summary").textContent = input.parentElement.textContent.trim();
       filter.open = false;
-      refreshDashboard();
+      refreshFirstIncidentPage();
     });
   });
 }
@@ -210,12 +214,12 @@ function initializeClientFilter(groups) {
       checkbox.checked = allCheckbox.checked;
     }
     updateClientFilterSummary();
-    refreshDashboard();
+    refreshFirstIncidentPage();
   });
   for (const checkbox of clientOptions.querySelectorAll("input[data-client]")) {
     checkbox.addEventListener("change", () => {
       updateClientFilterSummary();
-      refreshDashboard();
+      refreshFirstIncidentPage();
     });
   }
   updateClientFilterSummary();
@@ -278,10 +282,12 @@ function cycleIncidentSort(key) {
   } else {
     incidentSort = null;
   }
-  renderIncidents(latestIncidents, latestAIEnabled);
+  renderIncidents(latestIncidentPage, latestAIEnabled);
 }
 
-function renderIncidents(incidents, enabled) {
+function renderIncidents(page, enabled) {
+  latestIncidentPage = page;
+  const incidents = page.items;
   const head = document.querySelector("#incidents-head");
   const body = document.querySelector("#incidents-body");
   const headerRow = document.createElement("tr");
@@ -316,23 +322,24 @@ function renderIncidents(incidents, enabled) {
   }
   head.replaceChildren(headerRow);
   body.replaceChildren();
-  const minLevel = Number(document.querySelector("#level-filter").value || 0);
-  const severity = selectedFilterValue("severity-filter");
-  const selected = selectedClients();
-  const filtered = incidents.filter((incident) =>
-    incident.rule_level >= minLevel &&
-    (!severity || incident.severity === severity) &&
-    (selected.length === configuredGroups.length ||
-      (incident.agent_groups || []).some((group) => selected.includes(group))));
-  document.querySelector("#incident-count").textContent = `${filtered.length} affiché(s)`;
-  document.querySelector("#empty-incidents").hidden = filtered.length !== 0;
+  const firstItem = page.total === 0 ? 0 : page.offset + 1;
+  const lastItem = page.offset + incidents.length;
+  document.querySelector("#incident-count").textContent =
+    `${firstItem}–${lastItem} sur ${page.total} incident(s)`;
+  document.querySelector("#empty-incidents").hidden = page.total !== 0;
+  const pagination = document.querySelector("#incident-pagination");
+  pagination.hidden = page.total <= page.limit;
+  document.querySelector("#page-summary").textContent =
+    `Page ${Math.floor(page.offset / page.limit) + 1}`;
+  document.querySelector("#previous-page").disabled = page.offset === 0;
+  document.querySelector("#next-page").disabled = !page.has_more;
 
   const sorted = incidentSort
-    ? filtered.slice().sort((first, second) => {
+    ? incidents.slice().sort((first, second) => {
       const comparison = compareIncidents(first, second, incidentSort.key);
       return incidentSort.direction === "ascending" ? comparison : -comparison;
     })
-    : filtered;
+    : incidents;
 
   for (const incident of sorted) {
     const row = document.createElement("tr");
@@ -629,18 +636,39 @@ function renderQueue(jobs) {
 
 async function refreshDashboard() {
   if (!sessionStorage.getItem(tokenKey)) return;
+  const requestID = ++dashboardRequestID;
   try {
     pageMessage.textContent = "";
     if (configuredGroups === null) {
       initializeClientFilter(await api("/api/clients"));
     }
+    const query = new URLSearchParams({
+      limit: String(incidentPageLimit),
+      offset: String(incidentPageOffset),
+    });
     const status = selectedFilterValue("status-filter");
-    const query = new URLSearchParams({ limit: "500" });
     if (status) query.set("status", status);
-    const [incidents, control] = await Promise.all([
+    const severity = selectedFilterValue("severity-filter");
+    if (severity) query.set("severity", severity);
+    const minimumLevel = Number(document.querySelector("#level-filter").value || 0);
+    if (minimumLevel > 0) query.set("min_level", String(minimumLevel));
+    const search = document.querySelector("#incident-search").value.trim();
+    if (search) query.set("q", search);
+    const from = document.querySelector("#incident-from").value;
+    const to = document.querySelector("#incident-to").value;
+    if (from) query.set("from", from);
+    if (to) query.set("to", to);
+    const selected = selectedClients();
+    if (selected.length !== configuredGroups.length) {
+      query.set("group_filter", "true");
+      for (const group of selected) query.append("group", group);
+    }
+    const [page, control] = await Promise.all([
       api(`/api/incidents?${query}`),
       api("/api/control/ai"),
     ]);
+    if (requestID !== dashboardRequestID) return;
+    incidentPageOffset = page.offset;
     const queue = control.queue;
     latestQueuedIncidentIDs = new Set(
       queue
@@ -658,15 +686,20 @@ async function refreshDashboard() {
     const toggle = document.querySelector("#toggle-ai");
     toggle.textContent = control.enabled ? "Mettre en pause" : "Reprendre l’analyse";
     toggle.disabled = false;
-    latestIncidents = incidents;
     latestAIEnabled = control.enabled;
-    renderIncidents(incidents, control.enabled);
+    renderIncidents(page, control.enabled);
     renderQueue(queue);
     setConnected(true);
   } catch (error) {
+    if (requestID !== dashboardRequestID) return;
     if (sessionStorage.getItem(tokenKey)) pageMessage.textContent = error.message;
     else document.querySelector("#login-error").textContent = error.message;
   }
+}
+
+function refreshFirstIncidentPage() {
+  incidentPageOffset = 0;
+  return refreshDashboard();
 }
 
 async function queueAnalysis(button, incidentID) {
@@ -778,7 +811,23 @@ document.querySelector("#toggle-ai").addEventListener("click", async (event) => 
 });
 
 document.querySelector("#refresh").addEventListener("click", refreshDashboard);
-document.querySelector("#level-filter").addEventListener("input", refreshDashboard);
+document.querySelector("#level-filter").addEventListener("input", refreshFirstIncidentPage);
+for (const filterID of ["incident-from", "incident-to"]) {
+  document.querySelector(`#${filterID}`).addEventListener("change", refreshFirstIncidentPage);
+}
+document.querySelector("#incident-search").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(refreshFirstIncidentPage, 300);
+});
+document.querySelector("#previous-page").addEventListener("click", () => {
+  incidentPageOffset = Math.max(0, incidentPageOffset - incidentPageLimit);
+  refreshDashboard();
+});
+document.querySelector("#next-page").addEventListener("click", () => {
+  if (!latestIncidentPage.has_more) return;
+  incidentPageOffset += incidentPageLimit;
+  refreshDashboard();
+});
 document.querySelector("#logout").addEventListener("click", async () => {
   const token = sessionStorage.getItem(tokenKey);
   try {

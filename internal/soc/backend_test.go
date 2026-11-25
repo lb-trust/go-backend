@@ -993,18 +993,83 @@ func TestAPIListsAgentGroupsForExistingToken(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("incidents response status = %d, want %d", response.StatusCode, http.StatusOK)
 	}
-	var incidents []Incident
-	if err := json.NewDecoder(response.Body).Decode(&incidents); err != nil {
+	var page IncidentPage
+	if err := json.NewDecoder(response.Body).Decode(&page); err != nil {
 		t.Fatal(err)
 	}
-	if len(incidents) != 2 {
-		t.Fatalf("incident count = %d, want 2", len(incidents))
+	if len(page.Items) != 2 || page.Total != 2 || page.Offset != 0 ||
+		page.Limit != 500 || page.HasMore {
+		t.Fatalf("incident page = %#v, want two incidents on one page", page)
 	}
-	for _, incident := range incidents {
+	for _, incident := range page.Items {
 		if incident.TenantID != "tenant-a" || len(incident.AgentGroups) != 1 ||
 			(incident.AgentGroups[0] != "ClientA" && incident.AgentGroups[0] != "ClientB") {
 			t.Fatalf("incident group/tenant = %#v", incident)
 		}
+	}
+
+	today := time.Now().UTC().Format("2006-01-02")
+	filteredURL := fmt.Sprintf(
+		"%s/api/incidents?limit=1&group_filter=true&group=ClientA&q=agent-ClientA&from=%s&to=%s",
+		server.URL, today, today,
+	)
+	request, err = http.NewRequest(http.MethodGet, filteredURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer token-a")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var filteredPage IncidentPage
+	if err := json.NewDecoder(response.Body).Decode(&filteredPage); err != nil {
+		response.Body.Close()
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || filteredPage.Total != 1 ||
+		len(filteredPage.Items) != 1 || filteredPage.Items[0].AgentGroups[0] != "ClientA" {
+		t.Fatalf("filtered incident page = (%d, %#v), want ClientA only", response.StatusCode, filteredPage)
+	}
+
+	request, err = http.NewRequest(http.MethodGet, server.URL+"/api/incidents?limit=1&offset=0", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer token-a")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var firstPage IncidentPage
+	if err := json.NewDecoder(response.Body).Decode(&firstPage); err != nil {
+		response.Body.Close()
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(firstPage.Items) != 1 ||
+		firstPage.Total != 2 || !firstPage.HasMore {
+		t.Fatalf("first incident page = (%d, %#v), want one item and more pages", response.StatusCode, firstPage)
+	}
+	request, err = http.NewRequest(http.MethodGet, server.URL+"/api/incidents?limit=1&offset=1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer token-a")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var secondPage IncidentPage
+	if err := json.NewDecoder(response.Body).Decode(&secondPage); err != nil {
+		response.Body.Close()
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(secondPage.Items) != 1 ||
+		secondPage.Total != 2 || secondPage.HasMore || secondPage.Offset != 1 {
+		t.Fatalf("second incident page = (%d, %#v), want final item", response.StatusCode, secondPage)
 	}
 
 	request, err = http.NewRequest(http.MethodGet, server.URL+"/api/incidents?client=tenant-c", nil)
@@ -1016,8 +1081,8 @@ func TestAPIListsAgentGroupsForExistingToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var unfilteredIncidents []Incident
-	if err := json.NewDecoder(response.Body).Decode(&unfilteredIncidents); err != nil {
+	var unfilteredPage IncidentPage
+	if err := json.NewDecoder(response.Body).Decode(&unfilteredPage); err != nil {
 		response.Body.Close()
 		t.Fatal(err)
 	}
@@ -1025,7 +1090,7 @@ func TestAPIListsAgentGroupsForExistingToken(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("unfiltered incidents status = %d, want %d", response.StatusCode, http.StatusOK)
 	}
-	for _, incident := range unfilteredIncidents {
+	for _, incident := range unfilteredPage.Items {
 		if incident.TenantID != "tenant-a" {
 			t.Fatalf("client query escaped token tenant: %#v", incident)
 		}

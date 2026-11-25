@@ -493,13 +493,18 @@ IA et les routes `/api/admin/...` nécessitent une session administrateur.
 | `PATCH /api/control/ai` | Pause/reprise globale, corps `{"enabled":false}` ou `{"enabled":true}`. |
 | `GET /api/alerts?limit=100&since=...` | Groupes d’alertes récents ; `since` est une date RFC3339. |
 | `POST /api/alerts` | Ingestion manuelle d’une alerte JSON Wazuh. |
-| `GET /api/incidents?status=open&limit=100` | Liste d’incidents ; statut facultatif. |
+| `GET /api/incidents` | Liste paginée ; filtres facultatifs `status`, `severity`, `min_level`, `q`, `from`, `to` et `group`. `limit` est plafonné à 500, `offset` parcourt les pages. La réponse contient `items`, `total`, `offset`, `limit` et `has_more`. |
 | `GET /api/incidents/{id}` | Incident, alertes liées et feedback. |
 | `PATCH /api/incidents/{id}` | Modification de `status` et/ou ajout de `feedback`. |
 | `DELETE /api/incidents/{id}` | Supprimer l’incident, ses commentaires, son analyse et son traitement IA ; les alertes sources sont conservées. Refusé pendant une analyse en cours. |
 | `POST /api/incidents/{id}/analyze` | Analyse manuelle avec Ollama. |
 | `POST /api/incidents/{id}/queue` | Forcer une nouvelle analyse via la file persistante. |
 | `DELETE /api/incidents/{id}/queue` | Retirer de la file un traitement en attente ou en échec. |
+
+Pour filtrer les incidents par groupes, ajouter `group_filter=true` et un ou
+plusieurs paramètres `group`. `q` recherche dans le titre et les informations
+de l’agent ; `from` et `to` sont des dates de création inclusives au format
+`AAAA-MM-JJ`.
 
 ## Traitement des alertes et de l’IA
 

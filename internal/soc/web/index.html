@@ -89,6 +89,18 @@
             <span class="filter-chevron" aria-hidden="true"></span>
           </summary>
           <div class="filter-panel-content">
+            <label class="filter-control" for="incident-search">
+              <span class="filter-label">Recherche (titre, agent, IP)</span>
+              <input id="incident-search" type="search" maxlength="128" placeholder="Ex. serveur-01 ou 192.0.2.1">
+            </label>
+            <label class="filter-control" for="incident-from">
+              <span class="filter-label">Créé à partir du</span>
+              <input id="incident-from" type="date">
+            </label>
+            <label class="filter-control" for="incident-to">
+              <span class="filter-label">Créé jusqu’au</span>
+              <input id="incident-to" type="date">
+            </label>
             <div class="client-picker">
               <span class="filter-label">Groupes client</span>
               <details id="client-filter" class="filter-menu">
@@ -185,6 +197,11 @@
             <tbody id="incidents-body"></tbody>
           </table>
         </div>
+        <nav id="incident-pagination" class="incident-pagination" aria-label="Pagination des incidents" hidden>
+          <button id="previous-page" type="button" class="secondary">Précédent</button>
+          <span id="page-summary" class="muted" aria-live="polite"></span>
+          <button id="next-page" type="button" class="secondary">Suivant</button>
+        </nav>
         <p id="empty-incidents" class="empty" hidden>Aucun incident ne correspond à ces filtres.</p>
       </section>
 
