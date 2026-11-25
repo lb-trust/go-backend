@@ -43,12 +43,19 @@ const sortableIncidentColumns = new Set([
   "status",
   "level",
   "occurrences",
+  "agentGroups",
+  "agentName",
+  "agentIP",
+  "sourceIP",
+  "agentID",
   "ai",
 ]);
+const naturalCollator = new Intl.Collator("fr", { numeric: true, sensitivity: "base" });
 const severityOrder = { low: 0, medium: 1, high: 2, critical: 3 };
 const incidentStatusOrder = { open: 0, investigating: 1, resolved: 2, false_positive: 3 };
 const columnPicker = document.querySelector("#incident-columns");
 const columnSummary = document.querySelector("#columns-summary");
+const filtersPanel = document.querySelector("#dashboard-filters");
 const clientFilter = document.querySelector("#client-filter");
 const clientOptions = document.querySelector("#client-options");
 let visibleIncidentColumns = loadIncidentColumns();
@@ -242,6 +249,19 @@ function compareIncidents(first, second, key) {
       return first.rule_level - second.rule_level;
     case "occurrences":
       return first.occurrences - second.occurrences;
+    case "agentGroups":
+      return naturalCollator.compare(
+        (first.agent_groups || []).join(", "),
+        (second.agent_groups || []).join(", "),
+      );
+    case "agentName":
+      return naturalCollator.compare(first.agent_name || "", second.agent_name || "");
+    case "agentIP":
+      return naturalCollator.compare(first.agent_ip || "", second.agent_ip || "");
+    case "sourceIP":
+      return naturalCollator.compare(first.source_ip || "", second.source_ip || "");
+    case "agentID":
+      return naturalCollator.compare(first.agent_id || "", second.agent_id || "");
     case "ai":
       return Number(!latestQueuedIncidentIDs.has(first.id)) -
         Number(!latestQueuedIncidentIDs.has(second.id));
@@ -682,6 +702,7 @@ document.addEventListener("click", (event) => {
   for (const menu of document.querySelectorAll(".filter-menu[open]")) {
     if (!menu.contains(event.target)) menu.open = false;
   }
+  if (!filtersPanel.contains(event.target)) filtersPanel.open = false;
   if (!accountMenu.contains(event.target)) accountMenu.open = false;
 });
 

@@ -80,73 +80,84 @@
       </section>
 
       <section class="filters" aria-label="Filtres des incidents">
-        <div class="client-picker">
-          <span class="filter-label">Groupes client</span>
-          <details id="client-filter" class="filter-menu">
-            <summary class="filter-picker">Chargement des groupes…</summary>
-            <fieldset id="client-options" aria-label="Groupes client à afficher"></fieldset>
-          </details>
-        </div>
-        <label class="filter-control">
-          <span class="filter-label">Statut</span>
-          <details id="status-filter" class="filter-menu">
-            <summary class="filter-picker">Tous</summary>
-            <fieldset class="filter-options" aria-label="Filtrer par statut">
-              <label><input type="radio" name="status-filter" value="" checked> Tous</label>
-              <label><input type="radio" name="status-filter" value="open"> Ouvert</label>
-              <label><input type="radio" name="status-filter" value="investigating"> En cours</label>
-              <label><input type="radio" name="status-filter" value="resolved"> Résolu</label>
-              <label><input type="radio" name="status-filter" value="false_positive"> Faux positif</label>
-            </fieldset>
-          </details>
-        </label>
-        <label class="filter-control">
-          <span class="filter-label">Sévérité
-            <details class="help-tip">
-              <summary aria-label="À propos de la sévérité">i</summary>
-              <span class="help-content" role="note">La sévérité est calculée par le backend à partir du score de risque de l’incident.</span>
-            </details>
-          </span>
-          <details id="severity-filter" class="filter-menu">
-            <summary class="filter-picker">Toutes</summary>
-            <fieldset class="filter-options" aria-label="Filtrer par sévérité">
-              <label><input type="radio" name="severity-filter" value="" checked> Toutes</label>
-              <label><input type="radio" name="severity-filter" value="critical"> Critique</label>
-              <label><input type="radio" name="severity-filter" value="high"> Haute</label>
-              <label><input type="radio" name="severity-filter" value="medium"> Moyenne</label>
-              <label><input type="radio" name="severity-filter" value="low"> Faible</label>
-            </fieldset>
-          </details>
-        </label>
-        <label class="filter-control">
-          <span class="filter-label">Niveau Wazuh minimum
-            <details class="help-tip">
-              <summary aria-label="À propos du niveau Wazuh">i</summary>
-              <span class="help-content" role="note">Le niveau Wazuh va de 0 à 15. Ce filtre conserve les incidents dont le niveau est égal ou supérieur à la valeur choisie.</span>
-            </details>
-          </span>
-          <input id="level-filter" type="number" min="0" max="15" value="0">
-        </label>
-        <div class="column-picker-control">
-          <span class="filter-label">Affichage des colonnes</span>
-          <details class="column-picker filter-menu">
-            <summary class="filter-picker"><span id="columns-summary">Personnalisé</span></summary>
-            <fieldset id="incident-columns" aria-label="Colonnes à afficher">
-              <legend>Colonnes à afficher</legend>
-              <label><input type="checkbox" value="incident"> Incident</label>
-              <label><input type="checkbox" value="severity"> Sévérité</label>
-              <label><input type="checkbox" value="status"> Statut</label>
-              <label><input type="checkbox" value="level"> Niveau Wazuh</label>
-              <label><input type="checkbox" value="occurrences"> Occurrences</label>
-              <label><input type="checkbox" value="agentGroups"> Groupe(s) de l’agent</label>
-              <label><input type="checkbox" value="agentName"> Nom de l’agent</label>
-              <label><input type="checkbox" value="agentIP"> IP de l’agent</label>
-              <label><input type="checkbox" value="sourceIP"> IP source</label>
-              <label><input type="checkbox" value="agentID"> ID de l’agent</label>
-              <label><input type="checkbox" value="ai"> IA</label>
-            </fieldset>
-          </details>
-        </div>
+        <details id="dashboard-filters" class="filters-panel">
+          <summary class="filters-toggle">
+            <svg aria-hidden="true" focusable="false" viewBox="0 0 20 20">
+              <path d="M3 5h14M5 10h10m-7 5h4"/>
+            </svg>
+            <span>Filtres et colonnes</span>
+            <span class="filter-chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="filter-panel-content">
+            <div class="client-picker">
+              <span class="filter-label">Groupes client</span>
+              <details id="client-filter" class="filter-menu">
+                <summary class="filter-picker">Chargement des groupes…</summary>
+                <fieldset id="client-options" aria-label="Groupes client à afficher"></fieldset>
+              </details>
+            </div>
+            <label class="filter-control">
+              <span class="filter-label">Statut</span>
+              <details id="status-filter" class="filter-menu">
+                <summary class="filter-picker">Tous</summary>
+                <fieldset class="filter-options" aria-label="Filtrer par statut">
+                  <label><input type="radio" name="status-filter" value="" checked> Tous</label>
+                  <label><input type="radio" name="status-filter" value="open"> Ouvert</label>
+                  <label><input type="radio" name="status-filter" value="investigating"> En cours</label>
+                  <label><input type="radio" name="status-filter" value="resolved"> Résolu</label>
+                  <label><input type="radio" name="status-filter" value="false_positive"> Faux positif</label>
+                </fieldset>
+              </details>
+            </label>
+            <label class="filter-control">
+              <span class="filter-label">Sévérité
+                <details class="help-tip">
+                  <summary aria-label="À propos de la sévérité">i</summary>
+                  <span class="help-content" role="note">La sévérité est calculée par le backend à partir du score de risque de l’incident.</span>
+                </details>
+              </span>
+              <details id="severity-filter" class="filter-menu">
+                <summary class="filter-picker">Toutes</summary>
+                <fieldset class="filter-options" aria-label="Filtrer par sévérité">
+                  <label><input type="radio" name="severity-filter" value="" checked> Toutes</label>
+                  <label><input type="radio" name="severity-filter" value="critical"> Critique</label>
+                  <label><input type="radio" name="severity-filter" value="high"> Haute</label>
+                  <label><input type="radio" name="severity-filter" value="medium"> Moyenne</label>
+                  <label><input type="radio" name="severity-filter" value="low"> Faible</label>
+                </fieldset>
+              </details>
+            </label>
+            <label class="filter-control">
+              <span class="filter-label">Niveau Wazuh minimum
+                <details class="help-tip">
+                  <summary aria-label="À propos du niveau Wazuh">i</summary>
+                  <span class="help-content" role="note">Le niveau Wazuh va de 0 à 15. Ce filtre conserve les incidents dont le niveau est égal ou supérieur à la valeur choisie.</span>
+                </details>
+              </span>
+              <input id="level-filter" type="number" min="0" max="15" value="0">
+            </label>
+            <div class="column-picker-control">
+              <span class="filter-label">Affichage des colonnes</span>
+              <details class="column-picker filter-menu">
+                <summary class="filter-picker"><span id="columns-summary">Personnalisé</span></summary>
+                <fieldset id="incident-columns" aria-label="Colonnes à afficher">
+                  <legend>Colonnes à afficher</legend>
+                  <label><input type="checkbox" value="incident"> Incident</label>
+                  <label><input type="checkbox" value="severity"> Sévérité</label>
+                  <label><input type="checkbox" value="status"> Statut</label>
+                  <label><input type="checkbox" value="level"> Niveau Wazuh</label>
+                  <label><input type="checkbox" value="occurrences"> Occurrences</label>
+                  <label><input type="checkbox" value="agentGroups"> Groupe(s) de l’agent</label>
+                  <label><input type="checkbox" value="agentName"> Nom de l’agent</label>
+                  <label><input type="checkbox" value="agentIP"> IP de l’agent</label>
+                  <label><input type="checkbox" value="sourceIP"> IP source</label>
+                  <label><input type="checkbox" value="agentID"> ID de l’agent</label>
+                  <label><input type="checkbox" value="ai"> IA</label>
+                </fieldset>
+              </details>
+            </div>
+          </div>
+        </details>
         <button id="refresh" type="button" class="secondary refresh-button" aria-label="Actualiser" title="Actualiser">
           <svg aria-hidden="true" focusable="false" viewBox="0 0 20 20">
             <path d="M16.5 8A6.75 6.75 0 0 0 4.7 5.2L3 7m0 0V3.8M3 7h3.2M3.5 12A6.75 6.75 0 0 0 15.3 14.8L17 13m0 0v3.2M17 13h-3.2"/>

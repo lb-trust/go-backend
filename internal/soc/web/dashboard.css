@@ -94,9 +94,18 @@ input, select { border: 1px solid #d0d5dd; border-radius: 7px; color: #172033; m
 .secondary:hover { background: #dbe8ff; }
 .danger-button { background: #fee4e2; color: #b42318; }
 .danger-button:hover { background: #fecdca; }
-.filters { flex-wrap: wrap; margin: 0 0 18px; }
-.filters > .client-picker, .filters > .filter-control, .filters > .column-picker-control { flex: 1 1 0; min-width: 155px; }
-.filters > .filter-control { gap: 6px; }
+.filters { align-items: center; display: flex; justify-content: space-between; margin: 0 0 18px; }
+.filters-panel { position: relative; }
+.filters-toggle { align-items: center; background: #fff; border: 1px solid #d0d5dd; border-radius: 7px; color: #344054; cursor: pointer; display: flex; font-size: .85rem; font-weight: 650; gap: 9px; list-style: none; min-height: 40px; padding: 8px 12px; }
+.filters-toggle::-webkit-details-marker { display: none; }
+.filters-toggle:hover, .filters-panel[open] .filters-toggle { background: #f8faff; border-color: #98a2b3; }
+.filters-toggle:focus-visible { outline: 3px solid #155eef; outline-offset: 2px; }
+.filters-toggle svg { fill: none; height: 18px; stroke: currentColor; stroke-linecap: round; stroke-width: 1.7; width: 18px; }
+.filter-chevron { border-bottom: 1.5px solid #667085; border-right: 1.5px solid #667085; height: 7px; margin-left: 4px; transform: rotate(45deg) translateY(-2px); width: 7px; }
+.filters-panel[open] .filter-chevron { transform: rotate(225deg) translate(-1px, -1px); }
+.filter-panel-content { background: #fff; border: 1px solid #d0d5dd; border-radius: 10px; box-shadow: 0 8px 20px #1018281a; display: grid; gap: 14px 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); left: 0; padding: 16px; position: absolute; top: calc(100% + 8px); width: min(760px, calc(100vw - 32px)); z-index: 6; }
+.filter-panel-content > .client-picker, .filter-panel-content > .filter-control, .filter-panel-content > .column-picker-control { min-width: 0; }
+.filter-panel-content > .filter-control { gap: 6px; }
 .filter-label { align-items: center; display: flex; gap: 6px; }
 .filters .filter-label { color: #344054; font-size: .85rem; font-weight: 650; line-height: 1.2; }
 .client-picker, .column-picker-control { display: grid; gap: 6px; }
@@ -193,7 +202,7 @@ tr:last-child td { border-bottom: 0; }
   .panel { padding: 15px; }
   .control-panel { align-items: flex-start; flex-direction: column; }
   .header-status { align-items: flex-end; }
-  .filters { align-items: stretch; flex-direction: column; }
+  .filter-panel-content { grid-template-columns: minmax(0, 1fr); }
   .filters label { min-width: 0; }
   .vulnerability-search { align-items: stretch; flex-direction: column; }
   .vulnerability-search input { min-width: 0; }
