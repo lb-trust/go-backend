@@ -95,8 +95,11 @@ func TestLoginPanelOnlyShowsCredentialFields(t *testing.T) {
 			t.Errorf("login panel contains additional information %q", information)
 		}
 	}
-	if !strings.Contains(content, `<header class="topbar" id="topbar" hidden>`) {
-		t.Fatal("dashboard header is visible before authentication")
+	if !strings.Contains(content, `<header class="topbar" id="topbar">`) {
+		t.Fatal("dashboard title is not visible before authentication")
+	}
+	if !strings.Contains(content, `<div class="header-status" id="header-actions" hidden>`) {
+		t.Fatal("dashboard actions are visible before authentication")
 	}
 }
 

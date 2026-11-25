@@ -7,22 +7,27 @@
   <title>Console SOC</title>
   <link rel="stylesheet" href="/assets/dashboard.css">
 </head>
-<body>
+<body class="auth-screen">
   <main class="shell">
-    <header class="topbar" id="topbar" hidden>
+    <header class="topbar" id="topbar">
       <div>
         <p class="eyebrow">TRUSTINFO SOC</p>
         <h1>Console de supervision</h1>
       </div>
-      <div class="header-status">
+      <div class="header-status" id="header-actions" hidden>
         <span class="connection" id="connection-state">Déconnecté</span>
         <a class="wazuh-status" id="wazuh-state" href="/maintenance" aria-label="Ouvrir la page de maintenance Wazuh">
           Wazuh : vérification…
         </a>
-        <a class="secondary maintenance-back" href="/vulnerabilities">Versions à mettre à jour</a>
         <details class="account-menu" id="account-menu" hidden>
-          <summary>Configuration</summary>
-          <nav aria-label="Menu de configuration">
+          <summary aria-label="Ouvrir le menu">
+            <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+              <path d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+          </summary>
+          <nav aria-label="Menu principal">
+            <a href="/maintenance">État de la collecte Wazuh</a>
+            <a href="/vulnerabilities">Versions à mettre à jour</a>
             <a href="/accounts">Gestion des comptes</a>
             <a href="/settings">Configuration Wazuh</a>
             <button id="logout" type="button" class="link-button">Se déconnecter</button>
