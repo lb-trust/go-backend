@@ -205,6 +205,8 @@ if (wazuhForm) {
         document.querySelector("#wazuh-username").value = configuration.username;
         document.querySelector("#wazuh-ignore-tls").checked = configuration.verify_tls === false;
         document.querySelector("#wazuh-index").value = configuration.alerts_index;
+        document.querySelector("#wazuh-agents-index").value =
+          configuration.agents_index || "wazuh-states-agents-*";
         document.querySelector("#wazuh-vulnerabilities-index").value =
           configuration.vulnerabilities_index || "wazuh-states-vulnerabilities-*";
         document.querySelector("#wazuh-batch-size").value = configuration.batch_size;
@@ -234,6 +236,7 @@ if (wazuhForm) {
           password: document.querySelector("#wazuh-password").value,
           verify_tls: !document.querySelector("#wazuh-ignore-tls").checked,
           alerts_index: document.querySelector("#wazuh-index").value.trim(),
+          agents_index: document.querySelector("#wazuh-agents-index").value.trim(),
           vulnerabilities_index: document.querySelector("#wazuh-vulnerabilities-index").value.trim(),
           batch_size: Number(document.querySelector("#wazuh-batch-size").value),
         }),
@@ -255,6 +258,7 @@ if (wazuhForm) {
       await adminAPI("/api/admin/wazuh", { method: "DELETE" });
       wazuhForm.reset();
       document.querySelector("#wazuh-index").value = "wazuh-alerts-*";
+      document.querySelector("#wazuh-agents-index").value = "wazuh-states-agents-*";
       document.querySelector("#wazuh-vulnerabilities-index").value = "wazuh-states-vulnerabilities-*";
       document.querySelector("#wazuh-batch-size").value = "100";
       document.querySelector("#wazuh-ignore-tls").checked = false;
