@@ -271,10 +271,9 @@ type wazuhAgentBuckets struct {
 }
 
 type vulnerabilityAgent struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	IP     string `json:"ip"`
-	Status string `json:"status,omitempty"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	IP   string `json:"ip"`
 }
 
 func (b *Backend) vulnerabilityAgentsHandler(w http.ResponseWriter, r *http.Request) {
@@ -302,72 +301,83 @@ func (b *Backend) vulnerabilityAgentsHandler(w http.ResponseWriter, r *http.Requ
 }
 
 func (b *Backend) fetchVulnerabilityAgents(ctx context.Context, source WazuhSource) ([]vulnerabilityAgent, error) {
-	agentsIndex := source.AgentsIndex
-	if agentsIndex == "" {
-		agentsIndex = defaultAgentsIndex
+	alertsIndex := source.AlertsIndex
+	if alertsIndex == "" {
+		alertsIndex = "wazuh-alerts-*"
+	}
+	vulnerabilitiesIndex := source.VulnerabilitiesIndex
+	if vulnerabilitiesIndex == "" {
+		vulnerabilitiesIndex = defaultVulnerabilitiesIndex
 	}
 
 	agentsByID := make(map[string]vulnerabilityAgent)
-	afterKey := ""
-	for {
-		composite := map[string]any{
-			"size": vulnerabilityAgentPageSize,
-			"sources": []any{
-				map[string]any{"agent_id": map[string]any{"terms": map[string]string{"field": "agent.id"}}},
-			},
-		}
-		if afterKey != "" {
-			composite["after"] = map[string]string{"agent_id": afterKey}
-		}
-		result, err := b.searchWazuhIndex(ctx, source, agentsIndex, map[string]any{
-			"size":  0,
-			"query": map[string]any{"match_all": map[string]any{}},
-			"aggs": map[string]any{
-				"agents": map[string]any{
-					"composite": composite,
-					"aggs": map[string]any{
-						"details": map[string]any{
-							"top_hits": map[string]any{
-								"size": 1,
-								"_source": []string{
-									"agent.id", "agent.name", "agent.ip", "agent.status",
-									"host.name", "host.ip",
+	for _, index := range []string{alertsIndex, vulnerabilitiesIndex} {
+		afterKey := ""
+		for {
+			composite := map[string]any{
+				"size": vulnerabilityAgentPageSize,
+				"sources": []any{
+					map[string]any{"agent_id": map[string]any{"terms": map[string]string{"field": "agent.id"}}},
+				},
+			}
+			if afterKey != "" {
+				composite["after"] = map[string]string{"agent_id": afterKey}
+			}
+			result, err := b.searchWazuhIndex(ctx, source, index, map[string]any{
+				"size":  0,
+				"query": map[string]any{"match_all": map[string]any{}},
+				"aggs": map[string]any{
+					"agents": map[string]any{
+						"composite": composite,
+						"aggs": map[string]any{
+							"details": map[string]any{
+								"top_hits": map[string]any{
+									"size":    1,
+									"_source": []string{"agent.id", "agent.name", "agent.ip", "host.name", "host.ip"},
 								},
 							},
 						},
 					},
 				},
-			},
-		})
-		if err != nil {
-			return nil, err
-		}
-		if result.Aggregations.Agents == nil {
-			return nil, fmt.Errorf("Wazuh Indexer n’a pas renvoyé l’agrégation des agents")
-		}
-		for _, bucket := range result.Aggregations.Agents.Buckets {
-			agent := vulnerabilityAgent{ID: bucket.Key.AgentID}
-			found := vulnerabilityAgents(bucket.Details.Hits.Hits)
-			if len(found) > 0 {
-				agent.Name = found[0].Name
-				agent.IP = found[0].IP
-				agent.Status = found[0].Status
-				if agent.ID == "" {
-					agent.ID = found[0].ID
+			})
+			if err != nil {
+				return nil, err
+			}
+			if result.Aggregations.Agents == nil {
+				return nil, fmt.Errorf("Wazuh Indexer n’a pas renvoyé l’agrégation des agents")
+			}
+			for _, bucket := range result.Aggregations.Agents.Buckets {
+				agent := vulnerabilityAgent{ID: bucket.Key.AgentID}
+				found := vulnerabilityAgents(bucket.Details.Hits.Hits)
+				if len(found) > 0 {
+					agent.Name = found[0].Name
+					agent.IP = found[0].IP
+					if agent.ID == "" {
+						agent.ID = found[0].ID
+					}
 				}
+				if agent.ID == "" {
+					continue
+				}
+				current := agentsByID[agent.ID]
+				current.ID = agent.ID
+				if current.Name == "" {
+					current.Name = agent.Name
+				}
+				if current.IP == "" {
+					current.IP = agent.IP
+				}
+				agentsByID[agent.ID] = current
 			}
-			if agent.ID != "" {
-				agentsByID[agent.ID] = agent
+			nextAfterKey := result.Aggregations.Agents.AfterKey.AgentID
+			if nextAfterKey == "" {
+				break
 			}
+			if nextAfterKey == afterKey {
+				return nil, fmt.Errorf("Wazuh Indexer n’a pas avancé dans la pagination des agents")
+			}
+			afterKey = nextAfterKey
 		}
-		nextAfterKey := result.Aggregations.Agents.AfterKey.AgentID
-		if nextAfterKey == "" {
-			break
-		}
-		if nextAfterKey == afterKey {
-			return nil, fmt.Errorf("Wazuh Indexer n’a pas avancé dans la pagination des agents")
-		}
-		afterKey = nextAfterKey
 	}
 
 	agents := make([]vulnerabilityAgent, 0, len(agentsByID))
@@ -430,18 +440,6 @@ func (b *Backend) checkWazuhVulnerabilityIndex(ctx context.Context, source Wazuh
 	return err
 }
 
-func (b *Backend) checkWazuhAgentsIndex(ctx context.Context, source WazuhSource) error {
-	index := source.AgentsIndex
-	if index == "" {
-		index = defaultAgentsIndex
-	}
-	_, err := b.searchWazuhIndex(ctx, source, index, map[string]any{
-		"size":  0,
-		"query": map[string]any{"match_all": map[string]any{}},
-	})
-	return err
-}
-
 func agentSearchQuery(searchTerm string) map[string]any {
 	return map[string]any{
 		"bool": map[string]any{
@@ -460,7 +458,7 @@ func agentSearchQuery(searchTerm string) map[string]any {
 func vulnerabilityAgents(hits []wazuhSearchHit) []vulnerabilityAgent {
 	byID := make(map[string]vulnerabilityAgent)
 	for _, hit := range hits {
-		id := firstString(nestedString(hit.Source, "agent", "id"), nestedString(hit.Source, "id"))
+		id := nestedString(hit.Source, "agent", "id")
 		if id == "" {
 			continue
 		}
@@ -470,19 +468,12 @@ func vulnerabilityAgents(hits []wazuhSearchHit) []vulnerabilityAgent {
 			agent.Name = firstString(
 				nestedString(hit.Source, "agent", "name"),
 				nestedString(hit.Source, "host", "name"),
-				nestedString(hit.Source, "name"),
 			)
 		}
 		if agent.IP == "" {
 			agent.IP = firstString(
 				nestedString(hit.Source, "agent", "ip"),
 				nestedString(hit.Source, "host", "ip"),
-			)
-		}
-		if agent.Status == "" {
-			agent.Status = firstString(
-				nestedString(hit.Source, "agent", "status"),
-				nestedString(hit.Source, "status"),
 			)
 		}
 		byID[id] = agent

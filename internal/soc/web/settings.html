@@ -47,7 +47,7 @@
           <label for="wazuh-username">Utilisateur en lecture seule</label>
           <button class="info-toggle" type="button" aria-label="Aide pour le compte Wazuh" aria-expanded="false" aria-controls="help-wazuh-username">i</button>
           <div class="field-help" id="help-wazuh-username" role="tooltip" hidden>
-            <p>Utilisez un compte dédié en lecture seule, autorisé à rechercher dans les index des alertes, des agents et de l’inventaire des vulnérabilités. Demandez-le à l’administrateur Wazuh. Sur le serveur Indexer, les noms de comptes se trouvent dans <code>/etc/wazuh-indexer/opensearch-security/internal_users.yml</code> :</p>
+            <p>Utilisez un compte dédié en lecture seule, autorisé à rechercher dans les index des alertes et de l’inventaire des vulnérabilités. Demandez-le à l’administrateur Wazuh. Sur le serveur Indexer, les noms de comptes se trouvent dans <code>/etc/wazuh-indexer/opensearch-security/internal_users.yml</code> :</p>
             <pre><code>sudo grep -E '^[[:space:]]*[A-Za-z0-9_.-]+:' /etc/wazuh-indexer/opensearch-security/internal_users.yml</code></pre>
           </div>
         </div>
@@ -82,18 +82,10 @@
         </div>
         <input id="wazuh-index" value="wazuh-alerts-*" required>
         <div class="field-help-control">
-          <label for="wazuh-agents-index">Index des agents</label>
-          <button class="info-toggle" type="button" aria-label="Aide pour l’index des agents" aria-expanded="false" aria-controls="help-wazuh-agents-index">i</button>
-          <div class="field-help" id="help-wazuh-agents-index" role="tooltip" hidden>
-            <p>La valeur par défaut <code>wazuh-states-agents-*</code> contient l’inventaire des agents, y compris ceux qui sont déconnectés. Le compte doit avoir le droit de lecture sur ces index. Le test d’enregistrement vérifie aussi cet accès.</p>
-          </div>
-        </div>
-        <input id="wazuh-agents-index" value="wazuh-states-agents-*" required>
-        <div class="field-help-control">
           <label for="wazuh-vulnerabilities-index">Index des vulnérabilités</label>
           <button class="info-toggle" type="button" aria-label="Aide pour l’index des vulnérabilités" aria-expanded="false" aria-controls="help-wazuh-vulnerabilities-index">i</button>
           <div class="field-help" id="help-wazuh-vulnerabilities-index" role="tooltip" hidden>
-            <p>La valeur par défaut <code>wazuh-states-vulnerabilities-*</code> correspond à l’inventaire courant de Wazuh. Le compte doit avoir le droit de lecture sur ces index. Le test d’enregistrement vérifie l’accès aux index des alertes, des agents et des vulnérabilités.</p>
+            <p>La valeur par défaut <code>wazuh-states-vulnerabilities-*</code> correspond à l’inventaire courant de Wazuh. Le compte doit avoir le droit de lecture sur ces index. Le test d’enregistrement vérifie l’accès aux index des alertes et des vulnérabilités.</p>
           </div>
         </div>
         <input id="wazuh-vulnerabilities-index" value="wazuh-states-vulnerabilities-*" required>

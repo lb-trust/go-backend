@@ -38,12 +38,10 @@ type WazuhSource struct {
 	Password             string `json:"password"`
 	VerifyTLS            *bool  `json:"verify_tls"`
 	AlertsIndex          string `json:"alerts_index"`
-	AgentsIndex          string `json:"agents_index"`
 	VulnerabilitiesIndex string `json:"vulnerabilities_index"`
 	BatchSize            int    `json:"batch_size"`
 }
 
-const defaultAgentsIndex = "wazuh-states-agents-*"
 const defaultVulnerabilitiesIndex = "wazuh-states-vulnerabilities-*"
 
 func LoadConfig() (Config, error) {
@@ -112,9 +110,6 @@ func LoadConfig() (Config, error) {
 		}
 		if source.AlertsIndex == "" {
 			source.AlertsIndex = "wazuh-alerts-*"
-		}
-		if source.AgentsIndex == "" {
-			source.AgentsIndex = defaultAgentsIndex
 		}
 		if source.VulnerabilitiesIndex == "" {
 			source.VulnerabilitiesIndex = defaultVulnerabilitiesIndex

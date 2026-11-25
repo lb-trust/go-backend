@@ -658,7 +658,6 @@ func (b *Backend) wazuhConfigurationHandler(w http.ResponseWriter, r *http.Reque
 			"configured": true, "url": source.URL,
 			"username": source.Username, "verify_tls": source.VerifyTLS,
 			"alerts_index":          source.AlertsIndex,
-			"agents_index":          source.AgentsIndex,
 			"vulnerabilities_index": source.VulnerabilitiesIndex,
 			"batch_size":            source.BatchSize,
 			"password_configured":   source.Password != "",
@@ -675,7 +674,6 @@ func (b *Backend) wazuhConfigurationHandler(w http.ResponseWriter, r *http.Reque
 		Password             string `json:"password"`
 		VerifyTLS            *bool  `json:"verify_tls"`
 		AlertsIndex          string `json:"alerts_index"`
-		AgentsIndex          string `json:"agents_index"`
 		VulnerabilitiesIndex string `json:"vulnerabilities_index"`
 		BatchSize            int    `json:"batch_size"`
 	}
@@ -703,15 +701,11 @@ func (b *Backend) wazuhConfigurationHandler(w http.ResponseWriter, r *http.Reque
 		TenantID: source.TenantID, URL: strings.TrimSpace(payload.URL),
 		Username: strings.TrimSpace(payload.Username), Password: payload.Password,
 		VerifyTLS: payload.VerifyTLS, AlertsIndex: strings.TrimSpace(payload.AlertsIndex),
-		AgentsIndex:          strings.TrimSpace(payload.AgentsIndex),
 		VulnerabilitiesIndex: strings.TrimSpace(payload.VulnerabilitiesIndex),
 		BatchSize:            payload.BatchSize,
 	}
 	if source.AlertsIndex == "" {
 		source.AlertsIndex = "wazuh-alerts-*"
-	}
-	if source.AgentsIndex == "" {
-		source.AgentsIndex = defaultAgentsIndex
 	}
 	if source.VulnerabilitiesIndex == "" {
 		source.VulnerabilitiesIndex = defaultVulnerabilitiesIndex
@@ -738,11 +732,6 @@ func (b *Backend) wazuhConfigurationHandler(w http.ResponseWriter, r *http.Reque
 	if err := b.checkWazuhVulnerabilityIndex(r.Context(), source); err != nil {
 		writeError(w, http.StatusBadGateway,
 			"Vérification de l’index des vulnérabilités impossible : "+wazuhConfigurationFailure(err))
-		return
-	}
-	if err := b.checkWazuhAgentsIndex(r.Context(), source); err != nil {
-		writeError(w, http.StatusBadGateway,
-			"Vérification de l’index des agents impossible : "+wazuhConfigurationFailure(err))
 		return
 	}
 	if err := b.setWazuhSources(r.Context(), []WazuhSource{source}); err != nil {

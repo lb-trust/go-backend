@@ -66,16 +66,9 @@ function renderAgents() {
     const name = document.createElement("strong");
     name.textContent = agent.name || `Agent ${agent.id}`;
     const details = document.createElement("span");
-    const agentStatus = (agent.status || "").toLocaleLowerCase("fr-FR");
-    const statusLabel = agentStatus === "active"
-      ? "En ligne"
-      : agentStatus === "disconnected"
-        ? "Hors ligne"
-        : "État inconnu";
     details.textContent = [
       `ID : ${agent.id}`,
       agent.ip ? `IP : ${agent.ip}` : "",
-      statusLabel,
     ].filter(Boolean).join(" · ");
     button.append(name, details);
     button.addEventListener("click", () => selectAgent(agent, button));
@@ -83,7 +76,7 @@ function renderAgents() {
     agentList.append(item);
   }
   agentListMessage.textContent = matchingAgents.length
-    ? `${matchingAgents.length} agent${matchingAgents.length === 1 ? "" : "s"}`
+    ? ""
     : "Aucun agent ne correspond à cette recherche.";
 }
 

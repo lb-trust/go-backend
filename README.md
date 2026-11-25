@@ -272,7 +272,7 @@ d’identifiants PowerShell évite d’inscrire le mot de passe dans la commande
 
 ```powershell
 $credential = Get-Credential -UserName "soc-reader" -Message "Compte Wazuh Indexer en lecture seule"
-$source = @{ tenant_id = "client-a"; url = "https://INDEXER:9200"; username = $credential.UserName; password = $credential.GetNetworkCredential().Password; verify_tls = $true; alerts_index = "wazuh-alerts-*"; agents_index = "wazuh-states-agents-*"; batch_size = 100 }
+$source = @{ tenant_id = "client-a"; url = "https://INDEXER:9200"; username = $credential.UserName; password = $credential.GetNetworkCredential().Password; verify_tls = $true; alerts_index = "wazuh-alerts-*"; batch_size = 100 }
 $env:WAZUH_SOURCES_JSON = ConvertTo-Json -InputObject @($source) -Compress
 go run .\cmd\soc-backend
 ```
@@ -408,7 +408,6 @@ contient :
 | `username`, `password` | oui | Compte Indexer en lecture seule. |
 | `verify_tls` | non | `true` par défaut ; conserve la vérification des certificats TLS. |
 | `alerts_index` | non | Index à lire ; `wazuh-alerts-*` par défaut. |
-| `agents_index` | non | Index de l’inventaire des agents, y compris déconnectés ; `wazuh-states-agents-*` par défaut. |
 | `vulnerabilities_index` | non | Index d’inventaire à consulter ; `wazuh-states-vulnerabilities-*` par défaut. |
 | `batch_size` | non | Nombre maximal de résultats par contrôle ; `100` par défaut, maximum `1000`. |
 

@@ -64,8 +64,6 @@ disposer uniquement des permissions nécessaires :
 
 - lecture (`read`) sur le motif d'index des alertes, généralement
   `wazuh-alerts-*` ;
-- lecture (`read`) sur l'inventaire des agents, généralement
-  `wazuh-states-agents-*` ;
 - lecture (`read`) sur l'inventaire des vulnérabilités, généralement
   `wazuh-states-vulnerabilities-*` ;
 - permission de recherche en lecture seule au niveau cluster, si elle est
@@ -87,13 +85,6 @@ curl --user '<INDEXER_USER>' \
   'https://<INDEXER_HOST>:9200/wazuh-states-vulnerabilities-*/_search?size=0'
 ```
 
-Vérifiez également l'accès à l'inventaire des agents :
-
-```bash
-curl --user '<INDEXER_USER>' \
-  'https://<INDEXER_HOST>:9200/wazuh-states-agents-*/_search?size=0'
-```
-
 `curl` demande le mot de passe de manière interactive. Une réponse JSON
 contenant des résultats confirme que le compte peut effectuer cette recherche.
 Une interdiction sur une API de listing telle que `_cat/indices` n'empêche pas
@@ -113,7 +104,6 @@ un tableau JSON de sources. Exemple de structure :
     "password": "<SECRET>",
     "verify_tls": true,
     "alerts_index": "wazuh-alerts-*",
-    "agents_index": "wazuh-states-agents-*",
     "vulnerabilities_index": "wazuh-states-vulnerabilities-*",
     "batch_size": 100
   }
@@ -127,7 +117,6 @@ un tableau JSON de sources. Exemple de structure :
 | `username` / `password` | Identifiants du compte de lecture dédié. |
 | `verify_tls` | Vérifie la chaîne de certificats TLS. Laisser `true` en environnement normal. |
 | `alerts_index` | Motif d'index à rechercher ; `wazuh-alerts-*` par défaut. |
-| `agents_index` | Inventaire des agents, y compris déconnectés ; `wazuh-states-agents-*` par défaut. |
 | `vulnerabilities_index` | Index de l'inventaire des vulnérabilités ; `wazuh-states-vulnerabilities-*` par défaut. |
 | `batch_size` | Nombre maximal de résultats demandé par interrogation ; valeur par défaut `100`, maximum `1000`. |
 
@@ -135,7 +124,7 @@ Pour un essai ponctuel dans un shell Bash, définissez la variable avant le
 lancement du backend :
 
 ```bash
-export WAZUH_SOURCES_JSON='[{"tenant_id":"client-a","url":"https://<INDEXER_HOST>:9200","username":"<INDEXER_USER>","password":"<SECRET>","verify_tls":true,"alerts_index":"wazuh-alerts-*","agents_index":"wazuh-states-agents-*","batch_size":100}]'
+export WAZUH_SOURCES_JSON='[{"tenant_id":"client-a","url":"https://<INDEXER_HOST>:9200","username":"<INDEXER_USER>","password":"<SECRET>","verify_tls":true,"alerts_index":"wazuh-alerts-*","batch_size":100}]'
 export WAZUH_POLL_SECONDS=60
 go run ./cmd/soc-backend
 ```
