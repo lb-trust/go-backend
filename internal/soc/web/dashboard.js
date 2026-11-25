@@ -37,6 +37,16 @@ const incidentColumns = [
   { key: "ai", label: "IA", default: true },
 ];
 const columnsKey = "soc-dashboard-incident-columns";
+const sortableIncidentColumns = new Set([
+  "incident",
+  "severity",
+  "status",
+  "level",
+  "occurrences",
+  "ai",
+]);
+const severityOrder = { low: 0, medium: 1, high: 2, critical: 3 };
+const incidentStatusOrder = { open: 0, investigating: 1, resolved: 2, false_positive: 3 };
 const columnPicker = document.querySelector("#incident-columns");
 const columnSummary = document.querySelector("#columns-summary");
 const clientFilter = document.querySelector("#client-filter");
@@ -49,6 +59,7 @@ let configuredGroups = null;
 let activeIncidentID = "";
 let activePrimaryAlert = null;
 let activePrimaryOccurrenceTimes = [];
+let incidentSort = null;
 let refreshTimer;
 
 function updateColumnFilterSummary() {
@@ -219,6 +230,37 @@ function badge(row, label, style) {
   row.append(wrapper);
 }
 
+function compareIncidents(first, second, key) {
+  switch (key) {
+    case "incident":
+      return first.title.localeCompare(second.title, "fr", { numeric: true, sensitivity: "base" });
+    case "severity":
+      return severityOrder[first.severity] - severityOrder[second.severity];
+    case "status":
+      return incidentStatusOrder[first.status] - incidentStatusOrder[second.status];
+    case "level":
+      return first.rule_level - second.rule_level;
+    case "occurrences":
+      return first.occurrences - second.occurrences;
+    case "ai":
+      return Number(!latestQueuedIncidentIDs.has(first.id)) -
+        Number(!latestQueuedIncidentIDs.has(second.id));
+    default:
+      return 0;
+  }
+}
+
+function cycleIncidentSort(key) {
+  if (!incidentSort || incidentSort.key !== key) {
+    incidentSort = { key, direction: "ascending" };
+  } else if (incidentSort.direction === "ascending") {
+    incidentSort = { key, direction: "descending" };
+  } else {
+    incidentSort = null;
+  }
+  renderIncidents(latestIncidents, latestAIEnabled);
+}
+
 function renderIncidents(incidents, enabled) {
   const head = document.querySelector("#incidents-head");
   const body = document.querySelector("#incidents-body");
@@ -226,7 +268,30 @@ function renderIncidents(incidents, enabled) {
   const columns = incidentColumns.filter((column) => visibleIncidentColumns.includes(column.key));
   for (const column of columns) {
     const heading = document.createElement("th");
-    heading.textContent = column.label;
+    heading.scope = "col";
+    if (sortableIncidentColumns.has(column.key)) {
+      const direction = incidentSort && incidentSort.key === column.key
+        ? incidentSort.direction
+        : "none";
+      heading.setAttribute("aria-sort", direction);
+      const button = document.createElement("button");
+      button.className = "sort-button";
+      button.type = "button";
+      button.setAttribute(
+        "aria-label",
+        `${column.label}, ${direction === "none" ? "tri inactif" : `tri ${direction === "ascending" ? "croissant" : "décroissant"}`}`,
+      );
+      button.append(document.createTextNode(column.label));
+      const indicator = document.createElement("span");
+      indicator.className = "sort-indicator";
+      indicator.setAttribute("aria-hidden", "true");
+      indicator.textContent = direction === "ascending" ? "↑" : direction === "descending" ? "↓" : "↕";
+      button.append(indicator);
+      button.addEventListener("click", () => cycleIncidentSort(column.key));
+      heading.append(button);
+    } else {
+      heading.textContent = column.label;
+    }
     headerRow.append(heading);
   }
   head.replaceChildren(headerRow);
@@ -242,7 +307,14 @@ function renderIncidents(incidents, enabled) {
   document.querySelector("#incident-count").textContent = `${filtered.length} affiché(s)`;
   document.querySelector("#empty-incidents").hidden = filtered.length !== 0;
 
-  for (const incident of filtered) {
+  const sorted = incidentSort
+    ? filtered.slice().sort((first, second) => {
+      const comparison = compareIncidents(first, second, incidentSort.key);
+      return incidentSort.direction === "ascending" ? comparison : -comparison;
+    })
+    : filtered;
+
+  for (const incident of sorted) {
     const row = document.createElement("tr");
     const queued = latestQueuedIncidentIDs.has(incident.id);
     row.className = queued ? "incident-row queued" : "incident-row";

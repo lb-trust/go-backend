@@ -127,6 +127,10 @@ input, select { border: 1px solid #d0d5dd; border-radius: 7px; color: #172033; m
 .table-wrap { overflow-x: auto; }
 table { border-collapse: collapse; min-width: 700px; text-align: left; width: 100%; }
 th { color: #667085; font-size: .76rem; font-weight: 700; }
+.sort-button { align-items: center; background: transparent; color: inherit; display: inline-flex; font: inherit; gap: 6px; padding: 2px 0; text-align: left; }
+.sort-button:hover { background: transparent; color: #1849a9; }
+.sort-button:focus-visible { outline: 2px solid #155eef; outline-offset: 3px; }
+.sort-indicator { color: #667085; font-size: .9rem; }
 td, th { border-bottom: 1px solid #eaecf0; padding: 12px 10px; vertical-align: middle; }
 td { font-size: .86rem; }
 td:first-child { max-width: 350px; overflow-wrap: anywhere; }
