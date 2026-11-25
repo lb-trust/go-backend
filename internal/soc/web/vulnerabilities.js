@@ -5,7 +5,7 @@ const agentSearch = document.querySelector("#agent-search");
 const agentList = document.querySelector("#wazuh-agent-list");
 const agentListMessage = document.querySelector("#agent-list-message");
 const message = document.querySelector("#vulnerability-message");
-const results = document.querySelector("#vulnerability-results");
+const results = document.querySelector("#vulnerability-dialog");
 const body = document.querySelector("#vulnerability-body");
 const copyButton = document.querySelector("#copy-vulnerabilities");
 let latestInventory = null;
@@ -87,7 +87,14 @@ async function selectAgent(agent, selectedButton) {
   for (const button of agentList.querySelectorAll("button")) button.disabled = true;
   selectedButton.setAttribute("aria-busy", "true");
   message.textContent = `Chargement du récapitulatif de ${agent.name || agent.id}…`;
-  results.hidden = true;
+  document.querySelector("#agent-heading").textContent = `Agent ${agent.id}${agent.name ? ` — ${agent.name}` : ""}`;
+  document.querySelector("#agent-details").textContent = "";
+  document.querySelector("#vulnerability-count").textContent = "";
+  document.querySelector("#vulnerability-warning").hidden = true;
+  document.querySelector("#empty-vulnerabilities").hidden = true;
+  body.replaceChildren();
+  copyButton.disabled = true;
+  results.showModal();
   try {
     await renderInventory(await searchVulnerabilities(agent.id));
     message.textContent = "";
@@ -146,11 +153,14 @@ function renderInventory(inventory) {
   warning.textContent = inventory.truncated
     ? "Résultats limités à 10 000 détections ; certains logiciels peuvent ne pas apparaître."
     : "";
-  results.hidden = false;
   return inventory;
 }
 
 agentSearch.addEventListener("input", renderAgents);
+document.querySelector("#close-vulnerabilities").addEventListener("click", () => results.close());
+results.addEventListener("click", (event) => {
+  if (event.target === results) results.close();
+});
 
 loadAgents().then((result) => {
   agents = result;

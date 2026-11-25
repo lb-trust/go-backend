@@ -25,16 +25,22 @@
       <h2>Choisir un agent</h2>
       <p class="muted">Tous les agents connus dans les index Wazuh sont listés. Sélectionnez-en un pour afficher son récapitulatif ; les logiciels sont triés par priorité et les détails des failles ne sont pas affichés.</p>
       <div class="agent-search">
-        <label for="agent-search">Filtrer par ID, adresse IP ou nom du poste</label>
-        <input id="agent-search" name="search" type="search" maxlength="128" autocomplete="off">
+        <div class="field-help-control">
+          <label for="agent-search">Rechercher</label>
+          <details class="help-tip">
+            <summary aria-label="Informations sur la recherche" title="Informations sur la recherche">i</summary>
+            <span class="help-content" role="note">La recherche filtre les agents par nom du poste, ID de l’agent ou adresse IP.</span>
+          </details>
+        </div>
+        <input id="agent-search" name="search" type="search" maxlength="128" autocomplete="off" aria-describedby="agent-search-help">
+        <span id="agent-search-help" class="muted">Nom du poste, ID agent ou adresse IP.</span>
       </div>
       <p id="agent-list-message" class="muted" role="status" aria-live="polite">Chargement des agents Wazuh…</p>
       <ul id="wazuh-agent-list" class="wazuh-agent-list" aria-label="Agents Wazuh"></ul>
-      <p id="vulnerability-message" class="message" role="status" aria-live="polite"></p>
     </section>
 
-    <section class="panel" id="vulnerability-results" hidden>
-      <div class="section-heading">
+    <dialog id="vulnerability-dialog" aria-labelledby="agent-heading">
+      <div class="incident-dialog-header">
         <div>
           <p class="eyebrow">LOGICIELS À METTRE À JOUR</p>
           <h2 id="agent-heading">Agent</h2>
@@ -42,8 +48,12 @@
         <div class="vulnerability-actions">
           <span class="muted" id="vulnerability-count"></span>
           <button id="copy-vulnerabilities" type="button" class="secondary" disabled>Copier la liste</button>
+          <button id="close-vulnerabilities" type="button" class="secondary icon-button" aria-label="Fermer le récapitulatif" title="Fermer">
+            <span aria-hidden="true">&times;</span>
+          </button>
         </div>
       </div>
+      <p id="vulnerability-message" class="message" role="status" aria-live="polite"></p>
       <p id="agent-details" class="muted"></p>
       <p id="vulnerability-warning" class="muted" hidden></p>
       <div class="table-wrap">
@@ -60,7 +70,7 @@
         </table>
       </div>
       <p id="empty-vulnerabilities" class="empty" hidden>Aucun logiciel vulnérable trouvé pour cet agent.</p>
-    </section>
+    </dialog>
   </main>
   <script src="/assets/vulnerabilities.js" defer></script>
 </body>

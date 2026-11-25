@@ -168,8 +168,9 @@ tr:last-child td { border-bottom: 0; }
 .incident-row:hover { background: #f8faff; }
 .incident-row.queued:hover { background: #eaecf0; }
 .incident-row:focus-visible { outline: 2px solid #155eef; outline-offset: -2px; }
-#incident-dialog { border: 1px solid #d0d5dd; border-radius: 12px; box-shadow: 0 20px 50px #10182840; color: #172033; max-height: min(90vh, 900px); max-width: 760px; padding: 24px; width: calc(100% - 32px); }
-#incident-dialog::backdrop { background: #10182880; }
+#incident-dialog, #vulnerability-dialog { border: 1px solid #d0d5dd; border-radius: 12px; box-shadow: 0 20px 50px #10182840; color: #172033; max-height: min(90vh, 900px); max-width: 760px; padding: 24px; width: calc(100% - 32px); }
+#vulnerability-dialog { max-width: 900px; }
+#incident-dialog::backdrop, #vulnerability-dialog::backdrop { background: #10182880; }
 .incident-dialog-header { align-items: flex-start; display: flex; justify-content: space-between; gap: 16px; }
 .incident-dialog-header h2 { overflow-wrap: anywhere; }
 .icon-button { align-items: center; display: inline-flex; flex: 0 0 36px; font-size: 1.35rem; height: 36px; justify-content: center; line-height: 1; padding: 4px; }
@@ -214,7 +215,7 @@ tr:last-child td { border-bottom: 0; }
   .filter-panel-content { grid-template-columns: minmax(0, 1fr); }
   .filters label { min-width: 0; }
   .vulnerability-actions { align-items: flex-start; flex-direction: column; }
-  #incident-dialog { padding: 18px; }
+  #incident-dialog, #vulnerability-dialog { padding: 18px; }
   #alert-dialog { padding: 18px; }
   .incident-detail-grid { grid-template-columns: 1fr; }
 }
