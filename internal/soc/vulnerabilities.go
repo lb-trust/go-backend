@@ -15,6 +15,7 @@ import (
 )
 
 const maxVulnerabilityDocuments = 10000
+const vulnerabilityAgentPageSize = 1000
 
 type vulnerableSoftware struct {
 	Name         string `json:"name"`
@@ -248,12 +249,149 @@ type wazuhSearchResponse struct {
 		Total json.RawMessage  `json:"total"`
 		Hits  []wazuhSearchHit `json:"hits"`
 	} `json:"hits"`
+	Aggregations struct {
+		Agents *wazuhAgentBuckets `json:"agents"`
+	} `json:"aggregations"`
+}
+
+type wazuhAgentBuckets struct {
+	Buckets []struct {
+		Key struct {
+			AgentID string `json:"agent_id"`
+		} `json:"key"`
+		Details struct {
+			Hits struct {
+				Hits []wazuhSearchHit `json:"hits"`
+			} `json:"hits"`
+		} `json:"details"`
+	} `json:"buckets"`
+	AfterKey struct {
+		AgentID string `json:"agent_id"`
+	} `json:"after_key"`
 }
 
 type vulnerabilityAgent struct {
-	ID   string
-	Name string
-	IP   string
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	IP   string `json:"ip"`
+}
+
+func (b *Backend) vulnerabilityAgentsHandler(w http.ResponseWriter, r *http.Request) {
+	tenantID := tenantFromContext(r.Context())
+	var source *WazuhSource
+	for _, configured := range b.wazuhSources() {
+		if configured.TenantID == tenantID {
+			configured := configured
+			source = &configured
+			break
+		}
+	}
+	if source == nil {
+		writeError(w, http.StatusServiceUnavailable, "aucune source Wazuh n’est configurée pour ce client")
+		return
+	}
+
+	agents, err := b.fetchVulnerabilityAgents(r.Context(), *source)
+	if err != nil {
+		log.Printf("lecture de la liste des agents Wazuh: %v", err)
+		writeError(w, http.StatusBadGateway, "impossible de lire la liste des agents dans Wazuh Indexer")
+		return
+	}
+	writeJSON(w, http.StatusOK, agents)
+}
+
+func (b *Backend) fetchVulnerabilityAgents(ctx context.Context, source WazuhSource) ([]vulnerabilityAgent, error) {
+	alertsIndex := source.AlertsIndex
+	if alertsIndex == "" {
+		alertsIndex = "wazuh-alerts-*"
+	}
+	vulnerabilitiesIndex := source.VulnerabilitiesIndex
+	if vulnerabilitiesIndex == "" {
+		vulnerabilitiesIndex = defaultVulnerabilitiesIndex
+	}
+
+	agentsByID := make(map[string]vulnerabilityAgent)
+	for _, index := range []string{alertsIndex, vulnerabilitiesIndex} {
+		afterKey := ""
+		for {
+			composite := map[string]any{
+				"size": vulnerabilityAgentPageSize,
+				"sources": []any{
+					map[string]any{"agent_id": map[string]any{"terms": map[string]string{"field": "agent.id"}}},
+				},
+			}
+			if afterKey != "" {
+				composite["after"] = map[string]string{"agent_id": afterKey}
+			}
+			result, err := b.searchWazuhIndex(ctx, source, index, map[string]any{
+				"size":  0,
+				"query": map[string]any{"match_all": map[string]any{}},
+				"aggs": map[string]any{
+					"agents": map[string]any{
+						"composite": composite,
+						"aggs": map[string]any{
+							"details": map[string]any{
+								"top_hits": map[string]any{
+									"size":    1,
+									"_source": []string{"agent.id", "agent.name", "agent.ip", "host.name", "host.ip"},
+								},
+							},
+						},
+					},
+				},
+			})
+			if err != nil {
+				return nil, err
+			}
+			if result.Aggregations.Agents == nil {
+				return nil, fmt.Errorf("Wazuh Indexer n’a pas renvoyé l’agrégation des agents")
+			}
+			for _, bucket := range result.Aggregations.Agents.Buckets {
+				agent := vulnerabilityAgent{ID: bucket.Key.AgentID}
+				found := vulnerabilityAgents(bucket.Details.Hits.Hits)
+				if len(found) > 0 {
+					agent.Name = found[0].Name
+					agent.IP = found[0].IP
+					if agent.ID == "" {
+						agent.ID = found[0].ID
+					}
+				}
+				if agent.ID == "" {
+					continue
+				}
+				current := agentsByID[agent.ID]
+				current.ID = agent.ID
+				if current.Name == "" {
+					current.Name = agent.Name
+				}
+				if current.IP == "" {
+					current.IP = agent.IP
+				}
+				agentsByID[agent.ID] = current
+			}
+			nextAfterKey := result.Aggregations.Agents.AfterKey.AgentID
+			if nextAfterKey == "" {
+				break
+			}
+			if nextAfterKey == afterKey {
+				return nil, fmt.Errorf("Wazuh Indexer n’a pas avancé dans la pagination des agents")
+			}
+			afterKey = nextAfterKey
+		}
+	}
+
+	agents := make([]vulnerabilityAgent, 0, len(agentsByID))
+	for _, agent := range agentsByID {
+		agents = append(agents, agent)
+	}
+	sort.Slice(agents, func(i, j int) bool {
+		leftName, rightName := strings.ToLower(agents[i].Name), strings.ToLower(agents[j].Name)
+		if leftName != rightName {
+			return leftName < rightName
+		}
+		return agents[i].ID < agents[j].ID
+	})
+	return agents, nil
 }
 
 func (b *Backend) searchWazuhIndex(ctx context.Context, source WazuhSource, index string, query map[string]any) (wazuhSearchResponse, error) {

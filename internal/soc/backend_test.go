@@ -2215,6 +2215,92 @@ func TestVulnerabilityInventorySearchReturnsPrioritizedSoftwareOnly(t *testing.T
 	}
 }
 
+func TestVulnerabilityAgentsListCombinesConfiguredIndexes(t *testing.T) {
+	backend := testBackend(t, "")
+	verifyTLS := true
+	wazuh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("Wazuh request method = %s, want POST", r.Method)
+		}
+		var query map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&query); err != nil {
+			t.Errorf("decode Wazuh query: %v", err)
+		} else {
+			aggs, _ := query["aggs"].(map[string]any)
+			agentsAgg, _ := aggs["agents"].(map[string]any)
+			composite, _ := agentsAgg["composite"].(map[string]any)
+			if query["size"] != float64(0) ||
+				composite["size"] != float64(vulnerabilityAgentPageSize) ||
+				!strings.Contains(fmt.Sprint(query["query"]), "match_all") {
+				t.Errorf("agent-list query = %#v", query)
+			}
+		}
+
+		switch {
+		case strings.Contains(r.URL.Path, "wazuh-alerts-*/_search"):
+			aggs, _ := query["aggs"].(map[string]any)
+			agentsAgg, _ := aggs["agents"].(map[string]any)
+			composite, _ := agentsAgg["composite"].(map[string]any)
+			after, hasAfter := composite["after"]
+			if hasAfter && strings.Contains(fmt.Sprint(after), "007") {
+				_, _ = w.Write([]byte(`{"aggregations":{"agents":{"buckets":[
+					{"key":{"agent_id":"008"},"details":{"hits":{"hits":[{"_source":{"agent":{"id":"008"},"host":{"name":"poste-sans-nom"}}}]}}}
+				]}}}`))
+			} else {
+				_, _ = w.Write([]byte(`{"aggregations":{"agents":{"buckets":[
+					{"key":{"agent_id":"007"},"details":{"hits":{"hits":[{"_source":{"agent":{"id":"007","name":"poste-test"}}}]}}}
+				],"after_key":{"agent_id":"007"}}}}`))
+			}
+		case strings.Contains(r.URL.Path, defaultVulnerabilitiesIndex+"/_search"):
+			_, _ = w.Write([]byte(`{"aggregations":{"agents":{"buckets":[
+				{"key":{"agent_id":"007"},"details":{"hits":{"hits":[{"_source":{"agent":{"id":"007","ip":"192.0.2.7"}}}]}}},
+				{"key":{"agent_id":"009"},"details":{"hits":{"hits":[{"_source":{"agent":{"id":"009","name":"poste-vulnerable","ip":"192.0.2.9"}}}]}}}
+			]}}}`))
+		default:
+			t.Errorf("unexpected Wazuh index path %q", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer wazuh.Close()
+	if err := backend.setWazuhSources(context.Background(), []WazuhSource{{
+		TenantID: "tenant-a", URL: wazuh.URL, Username: "reader", Password: "test-password",
+		VerifyTLS: &verifyTLS, AlertsIndex: "wazuh-alerts-*",
+		VulnerabilitiesIndex: defaultVulnerabilitiesIndex, BatchSize: 100,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(backend.Handler())
+	defer server.Close()
+	request, err := http.NewRequest(http.MethodGet, server.URL+"/api/vulnerabilities/agents", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+loginAdmin(t, server))
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var agents []vulnerabilityAgent
+	if err := json.NewDecoder(response.Body).Decode(&agents); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || len(agents) != 3 {
+		t.Fatalf("agent list = (%d, %#v), want three agents", response.StatusCode, agents)
+	}
+	agentsByID := make(map[string]vulnerabilityAgent, len(agents))
+	for _, agent := range agents {
+		agentsByID[agent.ID] = agent
+	}
+	if merged := agentsByID["007"]; merged.Name != "poste-test" || merged.IP != "192.0.2.7" {
+		t.Fatalf("merged agent = %#v", merged)
+	}
+	if agents[0].Name > agents[1].Name || agents[1].Name > agents[2].Name {
+		t.Fatalf("agents are not sorted by name: %#v", agents)
+	}
+}
+
 func TestVulnerabilitySearchResolvesAgentByIPAndReturnsOS(t *testing.T) {
 	backend := testBackend(t, "")
 	verifyTLS := true

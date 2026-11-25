@@ -1,13 +1,16 @@
 "use strict";
 
 const sessionKey = "soc-admin-session";
-const searchForm = document.querySelector("#vulnerability-search");
-const searchButton = document.querySelector("#search-agent");
+const agentSearch = document.querySelector("#agent-search");
+const agentList = document.querySelector("#wazuh-agent-list");
+const agentListMessage = document.querySelector("#agent-list-message");
 const message = document.querySelector("#vulnerability-message");
 const results = document.querySelector("#vulnerability-results");
 const body = document.querySelector("#vulnerability-body");
 const copyButton = document.querySelector("#copy-vulnerabilities");
 let latestInventory = null;
+let agents = [];
+let inventoryLoading = false;
 const priorityLabels = {
   critical: "Critique",
   high: "Élevée",
@@ -32,6 +35,70 @@ async function searchVulnerabilities(searchTerm) {
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || `Erreur HTTP ${response.status}`);
   return result;
+}
+
+async function loadAgents() {
+  const response = await fetch("/api/vulnerabilities/agents", {
+    headers: { Authorization: `Bearer ${sessionStorage.getItem(sessionKey) || ""}` },
+  });
+  if (response.status === 401) {
+    sessionStorage.removeItem(sessionKey);
+    window.location.replace("/");
+    throw new Error("Session expirée ; reconnectez-vous.");
+  }
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || `Erreur HTTP ${response.status}`);
+  return result;
+}
+
+function renderAgents() {
+  const searchTerm = agentSearch.value.trim().toLocaleLowerCase("fr-FR");
+  const matchingAgents = agents.filter((agent) =>
+    [agent.name, agent.id, agent.ip].some((value) =>
+      (value || "").toLocaleLowerCase("fr-FR").includes(searchTerm)),
+  );
+  agentList.replaceChildren();
+  for (const agent of matchingAgents) {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "wazuh-agent";
+    const name = document.createElement("strong");
+    name.textContent = agent.name || `Agent ${agent.id}`;
+    const details = document.createElement("span");
+    details.textContent = [
+      `ID : ${agent.id}`,
+      agent.ip ? `IP : ${agent.ip}` : "",
+    ].filter(Boolean).join(" · ");
+    button.append(name, details);
+    button.addEventListener("click", () => selectAgent(agent, button));
+    item.append(button);
+    agentList.append(item);
+  }
+  agentListMessage.textContent = matchingAgents.length
+    ? `${matchingAgents.length} agent(s)`
+    : "Aucun agent ne correspond à cette recherche.";
+}
+
+async function selectAgent(agent, selectedButton) {
+  if (inventoryLoading) return;
+  inventoryLoading = true;
+  agentSearch.disabled = true;
+  for (const button of agentList.querySelectorAll("button")) button.disabled = true;
+  selectedButton.setAttribute("aria-busy", "true");
+  message.textContent = `Chargement du récapitulatif de ${agent.name || agent.id}…`;
+  results.hidden = true;
+  try {
+    await renderInventory(await searchVulnerabilities(agent.id));
+    message.textContent = "";
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    inventoryLoading = false;
+    agentSearch.disabled = false;
+    for (const button of agentList.querySelectorAll("button")) button.disabled = false;
+    selectedButton.removeAttribute("aria-busy");
+  }
 }
 
 function inventoryDetails(inventory) {
@@ -83,20 +150,13 @@ function renderInventory(inventory) {
   return inventory;
 }
 
-searchForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const searchTerm = document.querySelector("#agent-search").value.trim();
-  searchButton.disabled = true;
-  message.textContent = "Recherche dans l’inventaire Wazuh…";
-  results.hidden = true;
-  try {
-    await renderInventory(await searchVulnerabilities(searchTerm));
-    message.textContent = "";
-  } catch (error) {
-    message.textContent = error.message;
-  } finally {
-    searchButton.disabled = false;
-  }
+agentSearch.addEventListener("input", renderAgents);
+
+loadAgents().then((result) => {
+  agents = result;
+  renderAgents();
+}).catch((error) => {
+  agentListMessage.textContent = error.message;
 });
 
 copyButton.addEventListener("click", async () => {

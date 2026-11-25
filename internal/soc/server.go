@@ -39,6 +39,7 @@ func (b *Backend) Handler() http.Handler {
 	mux.Handle("GET /api/dashboard", b.authenticate(http.HandlerFunc(b.dashboardHandler)))
 	mux.Handle("GET /api/control/ai", b.authenticate(http.HandlerFunc(b.aiControlHandler)))
 	mux.Handle("GET /api/wazuh/status", b.authenticate(http.HandlerFunc(b.wazuhStatusHandler)))
+	mux.Handle("GET /api/vulnerabilities/agents", b.authenticate(http.HandlerFunc(b.vulnerabilityAgentsHandler)))
 	mux.Handle("GET /api/vulnerabilities", b.authenticate(http.HandlerFunc(b.vulnerabilitiesHandler)))
 	mux.Handle("PATCH /api/control/ai", b.authenticateAdminRequest(http.HandlerFunc(b.setAIControlHandler)))
 	mux.Handle("POST /api/incidents/{id}/queue", b.authenticateAdminRequest(http.HandlerFunc(b.queueIncidentHandler)))

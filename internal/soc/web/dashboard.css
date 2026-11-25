@@ -67,9 +67,14 @@ h2 { font-size: 1.15rem; margin-bottom: 5px; }
 .success-message { color: #067647; }
 .maintenance-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
 .maintenance-back { border-radius: 7px; font-size: .9rem; font-weight: 650; padding: 10px 15px; text-decoration: none; }
-.vulnerability-search { align-items: end; display: flex; flex-wrap: wrap; gap: 10px; max-width: 650px; }
-.vulnerability-search label { flex-basis: 100%; }
-.vulnerability-search input { flex: 1; min-width: 200px; }
+.agent-search { display: grid; gap: 6px; max-width: 650px; }
+.agent-search input { width: 100%; }
+.wazuh-agent-list { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); list-style: none; margin: 14px 0 0; padding: 0; }
+.wazuh-agent { background: #fff; border: 1px solid #d0d5dd; color: #172033; display: grid; gap: 5px; padding: 12px; text-align: left; width: 100%; }
+.wazuh-agent:hover { background: #f8faff; border-color: #84adff; }
+.wazuh-agent:focus-visible { outline: 3px solid #155eef; outline-offset: 2px; }
+.wazuh-agent span { color: #667085; font-size: .8rem; font-weight: 450; overflow-wrap: anywhere; }
+.wazuh-agent[aria-busy="true"] { opacity: .6; }
 .vulnerability-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
 .vulnerability-table { min-width: 560px; }
 .vulnerability-table td:nth-child(2), .vulnerability-table td:last-child { font-variant-numeric: tabular-nums; }
@@ -208,8 +213,6 @@ tr:last-child td { border-bottom: 0; }
   .header-status { align-items: flex-end; }
   .filter-panel-content { grid-template-columns: minmax(0, 1fr); }
   .filters label { min-width: 0; }
-  .vulnerability-search { align-items: stretch; flex-direction: column; }
-  .vulnerability-search input { min-width: 0; }
   .vulnerability-actions { align-items: flex-start; flex-direction: column; }
   #incident-dialog { padding: 18px; }
   #alert-dialog { padding: 18px; }

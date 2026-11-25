@@ -22,13 +22,14 @@
 
     <section class="panel">
       <p class="eyebrow">INVENTAIRE LOGICIEL WAZUH</p>
-      <h2>Rechercher un agent</h2>
-      <p class="muted">Recherchez par ID, adresse IP ou nom du poste. Les logiciels sont triés par priorité ; les détails des failles ne sont pas affichés.</p>
-      <form id="vulnerability-search" class="vulnerability-search">
-        <label for="agent-search">ID, IP ou nom du poste</label>
-        <input id="agent-search" name="search" type="search" maxlength="128" autocomplete="off" required>
-        <button id="search-agent" type="submit">Rechercher</button>
-      </form>
+      <h2>Choisir un agent</h2>
+      <p class="muted">Tous les agents connus dans les index Wazuh sont listés. Sélectionnez-en un pour afficher son récapitulatif ; les logiciels sont triés par priorité et les détails des failles ne sont pas affichés.</p>
+      <div class="agent-search">
+        <label for="agent-search">Filtrer par ID, adresse IP ou nom du poste</label>
+        <input id="agent-search" name="search" type="search" maxlength="128" autocomplete="off">
+      </div>
+      <p id="agent-list-message" class="muted" role="status" aria-live="polite">Chargement des agents Wazuh…</p>
+      <ul id="wazuh-agent-list" class="wazuh-agent-list" aria-label="Agents Wazuh"></ul>
       <p id="vulnerability-message" class="message" role="status" aria-live="polite"></p>
     </section>
 
