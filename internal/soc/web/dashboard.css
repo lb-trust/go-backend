@@ -78,6 +78,11 @@ h2 { font-size: 1.15rem; margin-bottom: 5px; }
 .vulnerability-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
 .vulnerability-table { min-width: 560px; }
 .vulnerability-table td:nth-child(2), .vulnerability-table td:last-child { font-variant-numeric: tabular-nums; }
+.upgrade-command { background: #f8f9fc; border: 1px solid #e4e7ec; border-radius: 8px; display: grid; gap: 10px; margin: 16px 0; padding: 14px; }
+.upgrade-command h3 { font-size: .98rem; margin: 0; }
+.upgrade-command-row { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
+.upgrade-command-row code { background: #eaecf0; border-radius: 5px; flex: 1; min-width: min(260px, 100%); overflow-wrap: anywhere; padding: 10px; }
+.upgrade-command > .muted { margin: 0; }
 .badge.unknown { background: #e4e7ec; color: #475467; }
 .maintenance-table { min-width: 950px; }
 .maintenance-state.receiving { color: #067647; font-weight: 700; }

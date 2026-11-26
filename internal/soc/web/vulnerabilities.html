@@ -56,6 +56,17 @@
       <p id="vulnerability-message" class="message" role="status" aria-live="polite"></p>
       <p id="agent-details" class="muted"></p>
       <p id="vulnerability-warning" class="muted" hidden></p>
+      <section class="upgrade-command" aria-labelledby="upgrade-command-heading">
+        <div>
+          <p class="eyebrow">MISE À JOUR GÉNÉRALE</p>
+          <h3 id="upgrade-command-heading">Commande pour cet OS</h3>
+        </div>
+        <div class="upgrade-command-row">
+          <code id="upgrade-command-value">OS non identifié</code>
+          <button id="copy-upgrade-command" type="button" class="secondary" disabled>Copier la commande upgrade</button>
+        </div>
+        <p id="upgrade-command-note" class="muted"></p>
+      </section>
       <div class="table-wrap">
         <table class="vulnerability-table">
           <thead>

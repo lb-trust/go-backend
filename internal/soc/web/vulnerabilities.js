@@ -8,7 +8,11 @@ const message = document.querySelector("#vulnerability-message");
 const results = document.querySelector("#vulnerability-dialog");
 const body = document.querySelector("#vulnerability-body");
 const copyButton = document.querySelector("#copy-vulnerabilities");
+const upgradeCommandValue = document.querySelector("#upgrade-command-value");
+const upgradeCommandNote = document.querySelector("#upgrade-command-note");
+const copyUpgradeCommandButton = document.querySelector("#copy-upgrade-command");
 let latestInventory = null;
+let latestUpgradeCommand = "";
 let agents = [];
 let inventoryLoading = false;
 const priorityLabels = {
@@ -119,8 +123,68 @@ function inventoryDetails(inventory) {
   ].filter(Boolean);
 }
 
+function upgradeCommand(inventory) {
+  const os = `${inventory.os_platform || ""} ${inventory.os_name || ""}`.toLocaleLowerCase("fr-FR");
+  if (/\bwindows\b/.test(os)) {
+    return {
+      command: "winget upgrade --all",
+      note: "Met à jour les applications gérées par winget. Les mises à jour Windows restent à effectuer via Windows Update.",
+    };
+  }
+  if (/\b(ubuntu|debian|linux mint|pop!_os)\b/.test(os)) {
+    return {
+      command: "sudo apt update && sudo apt upgrade",
+      note: "Met à jour les paquets de la distribution. Des droits administrateur peuvent être demandés.",
+    };
+  }
+  if (/\bfedora\b/.test(os)) {
+    return {
+      command: "sudo dnf upgrade --refresh",
+      note: "Met à jour les paquets Fedora. Des droits administrateur peuvent être demandés.",
+    };
+  }
+  if (/\b(rhel|red hat|rocky|alma linux|almalinux|centos|oracle linux)\b/.test(os)) {
+    return {
+      command: "sudo dnf upgrade",
+      note: "Met à jour les paquets de la distribution. Des droits administrateur peuvent être demandés.",
+    };
+  }
+  if (/\b(alpine)\b/.test(os)) {
+    return {
+      command: "sudo apk update && sudo apk upgrade",
+      note: "Met à jour les paquets Alpine. Des droits administrateur peuvent être demandés.",
+    };
+  }
+  if (/\b(arch|manjaro)\b/.test(os)) {
+    return {
+      command: "sudo pacman -Syu",
+      note: "Met à jour les paquets de la distribution. Des droits administrateur peuvent être demandés.",
+    };
+  }
+  if (/\b(opensuse|suse|sles)\b/.test(os)) {
+    return {
+      command: "sudo zypper refresh && sudo zypper update",
+      note: "Met à jour les paquets de la distribution. Des droits administrateur peuvent être demandés.",
+    };
+  }
+  if (/\b(macos|mac os|darwin)\b/.test(os)) {
+    return {
+      command: "sudo softwareupdate --install --all",
+      note: "Installe les mises à jour macOS disponibles. Un redémarrage peut être nécessaire.",
+    };
+  }
+  return null;
+}
+
 function renderInventory(inventory) {
   latestInventory = inventory;
+  const upgrade = upgradeCommand(inventory);
+  latestUpgradeCommand = upgrade ? upgrade.command : "";
+  upgradeCommandValue.textContent = latestUpgradeCommand || "Commande indisponible pour cet OS";
+  upgradeCommandNote.textContent = upgrade
+    ? upgrade.note
+    : "La distribution n’est pas identifiée assez précisément pour proposer une commande sûre.";
+  copyUpgradeCommandButton.disabled = !latestUpgradeCommand;
   body.replaceChildren();
   for (const software of inventory.software) {
     const row = document.createElement("tr");
@@ -182,6 +246,16 @@ copyButton.addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(text);
     message.textContent = "Liste copiée.";
+  } catch {
+    message.textContent = "Impossible d’accéder au presse-papiers dans ce navigateur.";
+  }
+});
+
+copyUpgradeCommandButton.addEventListener("click", async () => {
+  if (!latestUpgradeCommand) return;
+  try {
+    await navigator.clipboard.writeText(latestUpgradeCommand);
+    message.textContent = "Commande upgrade copiée.";
   } catch {
     message.textContent = "Impossible d’accéder au presse-papiers dans ce navigateur.";
   }
