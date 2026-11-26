@@ -1859,7 +1859,7 @@ func TestWazuhConfigurationIsTestedAndPersisted(t *testing.T) {
 			}
 			_, _ = w.Write([]byte(`{"data":{"token":"manager-api-token"},"error":0}`))
 		case "/agents":
-			if r.URL.Query().Get("status") != "all" ||
+			if r.URL.Query().Get("status") != "active" ||
 				r.Header.Get("Authorization") != "Bearer manager-api-token" {
 				t.Errorf("manager API agent request = %s, authorization %q",
 					r.URL.String(), r.Header.Get("Authorization"))
@@ -2304,7 +2304,7 @@ func TestVulnerabilityAgentsListUsesCurrentManagerAgents(t *testing.T) {
 			_, _ = w.Write([]byte("manager-api-token"))
 		case "/agents":
 			if r.Method != http.MethodGet ||
-				r.URL.Query().Get("status") != "all" ||
+				r.URL.Query().Get("status") != "active" ||
 				r.URL.Query().Get("limit") != "500" ||
 				r.URL.Query().Get("offset") != "0" ||
 				r.Header.Get("Authorization") != "Bearer manager-api-token" {
@@ -2348,8 +2348,8 @@ func TestVulnerabilityAgentsListUsesCurrentManagerAgents(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&agents); err != nil {
 		t.Fatal(err)
 	}
-	if response.StatusCode != http.StatusOK || len(agents) != 2 {
-		t.Fatalf("agent list = (%d, %#v), want all two currently registered agents", response.StatusCode, agents)
+	if response.StatusCode != http.StatusOK || len(agents) != 1 {
+		t.Fatalf("agent list = (%d, %#v), want only one active agent", response.StatusCode, agents)
 	}
 	agentsByID := make(map[string]vulnerabilityAgent, len(agents))
 	for _, agent := range agents {
@@ -2358,11 +2358,11 @@ func TestVulnerabilityAgentsListUsesCurrentManagerAgents(t *testing.T) {
 	if merged := agentsByID["007"]; merged.Name != "poste-test" || merged.IP != "192.0.2.7" {
 		t.Fatalf("active agent = %#v", merged)
 	}
-	if disconnected := agentsByID["008"]; disconnected.Name != "poste-déconnecté" {
-		t.Fatalf("currently registered disconnected agent = %#v", disconnected)
+	if _, disconnected := agentsByID["008"]; disconnected {
+		t.Fatal("disconnected agent was included in the online-agent list")
 	}
-	if agents[0].Name > agents[1].Name {
-		t.Fatalf("agents are not sorted by name: %#v", agents)
+	if agents[0].Name != "poste-test" {
+		t.Fatalf("active agent = %#v, want poste-test", agents[0])
 	}
 }
 

@@ -303,8 +303,13 @@ func (b *Backend) vulnerabilityAgentsHandler(w http.ResponseWriter, r *http.Requ
 
 	agents, err := b.fetchCurrentWazuhAgents(r.Context(), *source)
 	if err != nil {
-		log.Printf("lecture des agents enregistrés via l’API Wazuh: %v", err)
-		writeError(w, http.StatusBadGateway, "impossible de lire les agents enregistrés via l’API du manager Wazuh")
+		log.Printf("lecture des agents en ligne via l’API Wazuh: %v", err)
+		if errors.Is(err, context.DeadlineExceeded) {
+			writeError(w, http.StatusBadGateway,
+				"l’API du manager Wazuh ne répond pas depuis le serveur SOC avant le délai maximal ; vérifiez l’URL, le port 55000 et l’accès réseau depuis ce serveur")
+			return
+		}
+		writeError(w, http.StatusBadGateway, "impossible de lire les agents en ligne via l’API du manager Wazuh")
 		return
 	}
 	writeJSON(w, http.StatusOK, agents)
@@ -356,19 +361,19 @@ func (b *Backend) fetchCurrentWazuhAgents(ctx context.Context, source WazuhSourc
 	const pageSize = 500
 	for offset := 0; ; {
 		query := url.Values{
-			"status": {"all"},
+			"status": {"active"},
 			"limit":  {strconv.Itoa(pageSize)},
 			"offset": {strconv.Itoa(offset)},
 		}
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet,
 			apiURL+"/agents?"+query.Encode(), nil)
 		if err != nil {
-			return nil, fmt.Errorf("créer la requête des agents enregistrés: %w", err)
+			return nil, fmt.Errorf("créer la requête des agents en ligne: %w", err)
 		}
 		request.Header.Set("Authorization", "Bearer "+token)
 		response, err := client.Do(request)
 		if err != nil {
-			return nil, fmt.Errorf("lire les agents enregistrés dans l’API Wazuh: %w", err)
+			return nil, fmt.Errorf("lire les agents en ligne dans l’API Wazuh: %w", err)
 		}
 		if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 			response.Body.Close()
@@ -377,9 +382,10 @@ func (b *Backend) fetchCurrentWazuhAgents(ctx context.Context, source WazuhSourc
 		var result struct {
 			Data struct {
 				Agents []struct {
-					ID   string `json:"id"`
-					Name string `json:"name"`
-					IP   string `json:"ip"`
+					ID     string `json:"id"`
+					Name   string `json:"name"`
+					IP     string `json:"ip"`
+					Status string `json:"status"`
 				} `json:"affected_items"`
 				Total int `json:"total_affected_items"`
 			} `json:"data"`
@@ -393,7 +399,7 @@ func (b *Backend) fetchCurrentWazuhAgents(ctx context.Context, source WazuhSourc
 			return nil, errors.New("l’API du manager Wazuh a renvoyé un total d’agents invalide")
 		}
 		for _, agent := range result.Data.Agents {
-			if agent.ID == "" {
+			if agent.ID == "" || !strings.EqualFold(agent.Status, "active") {
 				continue
 			}
 			agentsByID[agent.ID] = vulnerabilityAgent{ID: agent.ID, Name: agent.Name, IP: agent.IP}

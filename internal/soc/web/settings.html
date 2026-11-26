@@ -35,7 +35,7 @@
       <form id="wazuh-form" class="admin-form">
         <section class="wazuh-manager-api-fields">
           <p class="eyebrow">LISTE DES AGENTS ACTUELS</p>
-          <p class="muted">La liste des agents des mises à jour est lue depuis l’API du manager, pas depuis l’historique de l’Indexer. Elle comprend les agents actuellement enregistrés, qu’ils soient connectés ou non. Cette connexion est distincte du compte Indexer ci-dessous.</p>
+          <p class="muted">La liste des agents en ligne est lue depuis l’API du manager, pas depuis l’historique de l’Indexer. Cette connexion est distincte du compte Indexer ci-dessous. L’URL doit être joignable depuis le serveur SOC. Si le backend tourne sur le manager Wazuh lui-même, essayez <code>https://localhost:55000</code>.</p>
           <div class="field-help-control">
             <label for="wazuh-manager-api-url">URL de l’API du manager Wazuh</label>
             <button class="info-toggle" type="button" aria-label="Aide pour l’API du manager Wazuh" aria-expanded="false" aria-controls="help-wazuh-manager-api">i</button>

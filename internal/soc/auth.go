@@ -759,6 +759,11 @@ func (b *Backend) wazuhConfigurationHandler(w http.ResponseWriter, r *http.Reque
 	}
 	if source.ManagerAPIURL != "" {
 		if _, err := b.fetchCurrentWazuhAgents(r.Context(), source); err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				writeError(w, http.StatusBadGateway,
+					"Vérification de l’API du manager impossible : délai dépassé. Vérifiez que l’URL est joignable depuis le serveur SOC, ainsi que le port 55000 et le pare-feu.")
+				return
+			}
 			writeError(w, http.StatusBadGateway, "Vérification de l’API du manager Wazuh impossible : "+err.Error())
 			return
 		}

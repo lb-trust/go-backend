@@ -97,7 +97,7 @@ async function refreshHome() {
     setValue("#home-agent-count", count.toLocaleString("fr-FR"));
     setValue(
       "#home-updates-summary",
-      `${count.toLocaleString("fr-FR")} agent(s) connu(s). Sélectionnez-en un pour consulter les versions détectées et les commandes adaptées.`,
+      `${count.toLocaleString("fr-FR")} agent(s) en ligne. Sélectionnez-en un pour consulter les versions détectées et les commandes adaptées.`,
     );
   } else {
     setValue("#home-agent-count", "Indisponible");
