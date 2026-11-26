@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-//go:embed web/index.html web/dashboard.css web/dashboard.js web/maintenance.html web/maintenance.js web/accounts.html web/settings.html web/admin.js web/vulnerabilities.html web/vulnerabilities.js
+//go:embed web/home.html web/home.js web/index.html web/dashboard.css web/dashboard.js web/maintenance.html web/maintenance.js web/accounts.html web/settings.html web/admin.js web/vulnerabilities.html web/vulnerabilities.js
 var dashboardFiles embed.FS
 
 func dashboardHandler() http.Handler {
@@ -19,16 +19,29 @@ func dashboardHandler() http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Cache-Control", "no-store")
 		if r.URL.Path == "/" {
-			index, err := dashboardFiles.ReadFile("web/index.html")
+			index, err := dashboardFiles.ReadFile("web/home.html")
 			if err != nil {
-				log.Printf("lire le tableau de bord embarqué: %v", err)
+				log.Printf("lire la page d’accueil embarquée: %v", err)
 				http.Error(w, "erreur interne", http.StatusInternalServerError)
 				return
 			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusOK)
 			if _, err := w.Write(index); err != nil {
-				log.Printf("envoyer le tableau de bord: %v", err)
+				log.Printf("envoyer la page d’accueil: %v", err)
+			}
+			return
+		} else if r.URL.Path == "/events" {
+			page, err := dashboardFiles.ReadFile("web/index.html")
+			if err != nil {
+				log.Printf("lire la page des événements embarquée: %v", err)
+				http.Error(w, "erreur interne", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			if _, err := w.Write(page); err != nil {
+				log.Printf("envoyer la page des événements: %v", err)
 			}
 			return
 		} else if r.URL.Path == "/maintenance" {

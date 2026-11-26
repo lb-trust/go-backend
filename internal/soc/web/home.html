@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Accueil — Console SOC</title>
+  <link rel="stylesheet" href="/assets/dashboard.css">
+</head>
+<body class="auth-screen">
+  <main class="shell">
+    <header class="topbar" id="topbar">
+      <div>
+        <p class="eyebrow">TRUSTINFO SOC</p>
+        <h1>Console de supervision</h1>
+      </div>
+      <div class="header-status" id="header-actions" hidden>
+        <span class="connection online">Connecté</span>
+        <details class="account-menu" id="account-menu">
+          <summary aria-label="Ouvrir le menu">
+            <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+              <path d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+          </summary>
+          <nav aria-label="Menu principal">
+            <a href="/">Accueil</a>
+            <a href="/events">Événements</a>
+            <a href="/vulnerabilities">Versions à mettre à jour</a>
+            <a href="/maintenance">État de la collecte Wazuh</a>
+            <a href="/accounts">Gestion des comptes</a>
+            <a href="/settings">Configuration Wazuh</a>
+            <button id="logout" type="button" class="link-button">Se déconnecter</button>
+          </nav>
+        </details>
+      </div>
+    </header>
+
+    <section class="panel login-panel" id="setup-panel" hidden>
+      <h2>Configuration initiale</h2>
+      <p>Créez le compte administrateur avant d’utiliser la console.</p>
+      <form id="setup-form" class="login-form">
+        <label for="setup-username">Identifiant</label>
+        <input id="setup-username" name="username" autocomplete="username" minlength="3" maxlength="64" required>
+        <label for="setup-password">Mot de passe</label>
+        <input id="setup-password" name="password" type="password" autocomplete="new-password" minlength="12" required>
+        <label for="setup-confirm-password">Confirmer le mot de passe</label>
+        <input id="setup-confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="12" required>
+        <button type="submit">Créer le compte administrateur</button>
+      </form>
+      <p class="message" id="setup-error" role="status"></p>
+    </section>
+
+    <section class="panel login-panel" id="login-panel" hidden>
+      <form id="login-form" class="login-form">
+        <label for="username">Nom d’utilisateur</label>
+        <input id="username" name="username" autocomplete="username" required>
+        <label for="password">Mot de passe</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <button type="submit">Se connecter</button>
+      </form>
+      <p class="message" id="login-error" role="status"></p>
+    </section>
+
+    <div id="home-dashboard" hidden>
+      <section class="panel home-intro">
+        <div>
+          <p class="eyebrow">VUE D’ENSEMBLE</p>
+          <h2>État général du parc</h2>
+          <p class="muted">Un aperçu des événements de sécurité, des agents connus et de l’état de la collecte.</p>
+        </div>
+        <button id="refresh-home" type="button" class="secondary">Actualiser</button>
+      </section>
+
+      <p id="home-error" class="message" role="status" aria-live="polite"></p>
+
+      <section class="home-metrics" aria-label="Résumé du parc">
+        <article class="panel home-metric">
+          <p class="eyebrow">ALERTES WAZUH</p>
+          <strong id="home-alert-count">—</strong>
+          <span class="muted">groupes d’alertes reçus</span>
+        </article>
+        <article class="panel home-metric">
+          <p class="eyebrow">INCIDENTS OUVERTS</p>
+          <strong id="home-open-count">—</strong>
+          <span class="muted">à traiter ou en cours</span>
+        </article>
+        <article class="panel home-metric">
+          <p class="eyebrow">AGENTS CONNUS</p>
+          <strong id="home-agent-count">—</strong>
+          <span class="muted">présents dans les index Wazuh</span>
+        </article>
+        <article class="panel home-metric">
+          <p class="eyebrow">COLLECTE</p>
+          <strong id="home-collection-state">—</strong>
+          <span id="home-collection-details" class="muted">État de la collecte Wazuh</span>
+        </article>
+      </section>
+
+      <section class="home-pages" aria-label="Pages principales">
+        <a class="panel home-page-link" href="/events">
+          <span class="eyebrow">SUPERVISION</span>
+          <h2>Événements</h2>
+          <p id="home-events-summary" class="muted">Consulter les incidents, les alertes et leur suivi.</p>
+          <span class="home-link-label">Ouvrir les événements <span aria-hidden="true">→</span></span>
+        </a>
+        <a class="panel home-page-link" href="/vulnerabilities">
+          <span class="eyebrow">INVENTAIRE LOGICIEL</span>
+          <h2>Mises à jour</h2>
+          <p id="home-updates-summary" class="muted">Consulter les versions détectées par agent et les commandes de mise à jour adaptées à l’OS.</p>
+          <span class="home-link-label">Voir les mises à jour <span aria-hidden="true">→</span></span>
+        </a>
+      </section>
+    </div>
+  </main>
+  <script src="/assets/home.js" defer></script>
+</body>
+</html>

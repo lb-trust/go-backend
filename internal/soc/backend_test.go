@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -103,6 +104,36 @@ func TestLoginPanelOnlyShowsCredentialFields(t *testing.T) {
 	}
 	if strings.Contains(content, `id="wazuh-state"`) {
 		t.Fatal("Wazuh status is still shown in the dashboard header")
+	}
+}
+
+func TestHomeAndEventsPagesAreRoutedSeparately(t *testing.T) {
+	backend := testBackend(t, "")
+	server := httptest.NewServer(backend.Handler())
+	defer server.Close()
+
+	for _, page := range []struct {
+		path     string
+		contains string
+		script   string
+	}{
+		{path: "/", contains: "État général du parc", script: "/assets/home.js"},
+		{path: "/events", contains: "<h1>Événements</h1>", script: "/assets/dashboard.js"},
+	} {
+		response, err := http.Get(server.URL + page.path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", page.path, err)
+		}
+		content, readErr := io.ReadAll(response.Body)
+		response.Body.Close()
+		if readErr != nil {
+			t.Fatalf("read %s: %v", page.path, readErr)
+		}
+		if response.StatusCode != http.StatusOK ||
+			!strings.Contains(string(content), page.contains) ||
+			!strings.Contains(string(content), page.script) {
+			t.Errorf("%s returned %d without expected page content and script", page.path, response.StatusCode)
+		}
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 func (b *Backend) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /", dashboardHandler())
+	mux.Handle("GET /events", dashboardHandler())
 	mux.Handle("GET /accounts", dashboardHandler())
 	mux.Handle("GET /settings", dashboardHandler())
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {

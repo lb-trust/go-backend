@@ -14,10 +14,24 @@
         <p class="eyebrow">TRUSTINFO SOC</p>
         <h1>Versions à mettre à jour</h1>
       </div>
-      <nav class="maintenance-actions" aria-label="Navigation">
-        <a class="secondary maintenance-back" href="/">Retour au dashboard</a>
+      <div class="maintenance-actions">
         <a class="secondary maintenance-back" href="/settings">Configuration Wazuh</a>
-      </nav>
+        <details class="account-menu">
+          <summary aria-label="Ouvrir le menu">
+            <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+              <path d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+          </summary>
+          <nav aria-label="Menu principal">
+            <a href="/">Accueil</a>
+            <a href="/events">Événements</a>
+            <a href="/vulnerabilities">Versions à mettre à jour</a>
+            <a href="/maintenance">État de la collecte Wazuh</a>
+            <a href="/accounts">Gestion des comptes</a>
+            <a href="/settings">Configuration Wazuh</a>
+          </nav>
+        </details>
+      </div>
     </header>
 
     <section class="panel">

@@ -67,6 +67,18 @@ h2 { font-size: 1.15rem; margin-bottom: 5px; }
 .success-message { color: #067647; }
 .maintenance-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
 .maintenance-back { border-radius: 7px; font-size: .9rem; font-weight: 650; padding: 10px 15px; text-decoration: none; }
+.home-intro { align-items: center; display: flex; justify-content: space-between; gap: 20px; }
+.home-intro p:last-child { margin-bottom: 0; }
+.home-metrics { display: grid; gap: 14px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.home-metric { display: grid; gap: 7px; margin: 0; min-width: 0; }
+.home-metric strong { font-size: clamp(1.35rem, 3vw, 2rem); overflow-wrap: anywhere; }
+.home-metric .muted { line-height: 1.4; }
+.home-pages { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 18px; }
+.home-page-link { color: inherit; margin: 0; text-decoration: none; transition: border-color .15s, box-shadow .15s; }
+.home-page-link:hover, .home-page-link:focus-visible { border-color: #84adff; box-shadow: 0 4px 14px #10182812; outline: none; }
+.home-page-link h2 { margin: 4px 0 8px; }
+.home-page-link p { line-height: 1.5; min-height: 2.8em; }
+.home-link-label { color: #1849a9; font-size: .9rem; font-weight: 700; }
 .agent-search { display: grid; gap: 6px; max-width: 650px; }
 .agent-search input { width: 100%; }
 .wazuh-agent-list { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); list-style: none; margin: 14px 0 0; padding: 0; }
@@ -216,6 +228,9 @@ tr:last-child td { border-bottom: 0; }
   .shell { padding: 20px 12px 32px; }
   .panel { padding: 15px; }
   .control-panel { align-items: flex-start; flex-direction: column; }
+  .home-intro { align-items: flex-start; flex-direction: column; }
+  .home-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .home-pages { grid-template-columns: minmax(0, 1fr); }
   .header-status { align-items: flex-end; }
   .filter-panel-content { grid-template-columns: minmax(0, 1fr); }
   .filters label { min-width: 0; }
