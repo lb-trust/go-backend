@@ -314,7 +314,7 @@ func (b *Backend) fetchCurrentWazuhAgents(ctx context.Context, source WazuhSourc
 	apiURL := strings.TrimRight(source.ManagerAPIURL, "/")
 	client := b.wazuhManagerAPIHTTPClient(source)
 	authRequest, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		apiURL+"/security/user/authenticate", nil)
+		apiURL+"/security/user/authenticate?raw=true", nil)
 	if err != nil {
 		return nil, fmt.Errorf("créer la requête d’authentification à l’API Wazuh: %w", err)
 	}
@@ -323,21 +323,32 @@ func (b *Backend) fetchCurrentWazuhAgents(ctx context.Context, source WazuhSourc
 	if err != nil {
 		return nil, fmt.Errorf("contacter l’API du manager Wazuh: %w", err)
 	}
+	if authResponse.StatusCode < http.StatusOK || authResponse.StatusCode >= http.StatusMultipleChoices {
+		authResponse.Body.Close()
+		return nil, fmt.Errorf("l’API du manager Wazuh a refusé l’authentification (HTTP %d)", authResponse.StatusCode)
+	}
+	authBody, decodeErr := io.ReadAll(io.LimitReader(authResponse.Body, 1<<20))
+	authResponse.Body.Close()
+	if decodeErr != nil {
+		return nil, fmt.Errorf("décoder la réponse d’authentification de l’API Wazuh: %w", decodeErr)
+	}
+	token := ""
 	var authResult struct {
 		Data struct {
 			Token string `json:"token"`
 		} `json:"data"`
 	}
-	if authResponse.StatusCode < http.StatusOK || authResponse.StatusCode >= http.StatusMultipleChoices {
-		authResponse.Body.Close()
-		return nil, fmt.Errorf("l’API du manager Wazuh a refusé l’authentification (HTTP %d)", authResponse.StatusCode)
+	if err := json.Unmarshal(authBody, &authResult); err == nil {
+		token = authResult.Data.Token
+	} else {
+		var rawToken string
+		if json.Unmarshal(authBody, &rawToken) == nil && rawToken != "" {
+			token = rawToken
+		} else {
+			token = strings.TrimSpace(string(authBody))
+		}
 	}
-	decodeErr := json.NewDecoder(io.LimitReader(authResponse.Body, 1<<20)).Decode(&authResult)
-	authResponse.Body.Close()
-	if decodeErr != nil {
-		return nil, fmt.Errorf("décoder la réponse d’authentification de l’API Wazuh: %w", decodeErr)
-	}
-	if authResult.Data.Token == "" {
+	if token == "" {
 		return nil, errors.New("l’API du manager Wazuh n’a pas renvoyé de jeton")
 	}
 
@@ -354,7 +365,7 @@ func (b *Backend) fetchCurrentWazuhAgents(ctx context.Context, source WazuhSourc
 		if err != nil {
 			return nil, fmt.Errorf("créer la requête des agents enregistrés: %w", err)
 		}
-		request.Header.Set("Authorization", "Bearer "+authResult.Data.Token)
+		request.Header.Set("Authorization", "Bearer "+token)
 		response, err := client.Do(request)
 		if err != nil {
 			return nil, fmt.Errorf("lire les agents enregistrés dans l’API Wazuh: %w", err)

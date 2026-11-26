@@ -73,7 +73,7 @@ h2 { font-size: 1.15rem; margin-bottom: 5px; }
 .home-intro p:last-child { margin-bottom: 0; }
 .home-metrics { display: grid; gap: 14px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .home-metric { display: grid; gap: 7px; margin: 0; min-width: 0; }
-.home-metric strong { font-size: clamp(1.35rem, 3vw, 2rem); overflow-wrap: anywhere; }
+.home-metric strong { font-size: clamp(1.15rem, 2.2vw, 1.6rem); overflow-wrap: anywhere; }
 .home-metric .muted { line-height: 1.4; }
 .home-pages { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 18px; }
 .home-page-link { color: inherit; margin: 0; text-decoration: none; transition: border-color .15s, box-shadow .15s; }

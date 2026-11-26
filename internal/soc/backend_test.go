@@ -2297,10 +2297,11 @@ func TestVulnerabilityAgentsListUsesCurrentManagerAgents(t *testing.T) {
 		case "/security/user/authenticate":
 			username, password, ok := r.BasicAuth()
 			if r.Method != http.MethodPost || !ok ||
+				r.URL.Query().Get("raw") != "true" ||
 				username != "agent-reader" || password != "manager-password" {
 				t.Errorf("manager API authentication = %s, credentials valid: %t", r.Method, ok)
 			}
-			_, _ = w.Write([]byte(`{"data":{"token":"manager-api-token"},"error":0}`))
+			_, _ = w.Write([]byte("manager-api-token"))
 		case "/agents":
 			if r.Method != http.MethodGet ||
 				r.URL.Query().Get("status") != "all" ||

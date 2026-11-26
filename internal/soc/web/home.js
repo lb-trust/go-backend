@@ -61,6 +61,8 @@ function renderCollection(status) {
 async function refreshHome() {
   const refreshButton = document.querySelector("#refresh-home");
   refreshButton.disabled = true;
+  setupPanel.hidden = true;
+  loginPanel.hidden = true;
   setValue("#home-error", "");
   const results = await Promise.allSettled([
     api("/api/dashboard"),
@@ -99,7 +101,7 @@ async function refreshHome() {
     );
   } else {
     setValue("#home-agent-count", "Indisponible");
-    setValue("#home-updates-summary", "Impossible de lire l’inventaire des agents Wazuh.");
+    setValue("#home-updates-summary", `Impossible de lire les agents du manager Wazuh : ${agents.reason.message}`);
   }
 
   if (collection.status === "fulfilled") {
