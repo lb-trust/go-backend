@@ -1850,6 +1850,26 @@ func TestWazuhConfigurationIsTestedAndPersisted(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"hits":{"hits":[]}}`))
 	}))
+	managerAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/security/user/authenticate":
+			username, password, ok := r.BasicAuth()
+			if !ok || username != "agent-reader" || password != "manager-password" {
+				t.Error("manager API authentication used unexpected credentials")
+			}
+			_, _ = w.Write([]byte(`{"data":{"token":"manager-api-token"},"error":0}`))
+		case "/agents":
+			if r.URL.Query().Get("status") != "all" ||
+				r.Header.Get("Authorization") != "Bearer manager-api-token" {
+				t.Errorf("manager API agent request = %s, authorization %q",
+					r.URL.String(), r.Header.Get("Authorization"))
+			}
+			_, _ = w.Write([]byte(`{"data":{"affected_items":[],"total_affected_items":0},"error":0}`))
+		default:
+			t.Errorf("unexpected manager API path %q", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
 	server := httptest.NewServer(backend.Handler())
 
 	loginResponse, err := http.Post(server.URL+"/api/auth/login", "application/json",
@@ -1870,6 +1890,8 @@ func TestWazuhConfigurationIsTestedAndPersisted(t *testing.T) {
 		"url": wazuh.URL, "username": "reader",
 		"password": "test-password", "verify_tls": true,
 		"alerts_index": "wazuh-alerts-*", "batch_size": 100,
+		"manager_api_url": managerAPI.URL, "manager_api_username": "agent-reader",
+		"manager_api_password": "manager-password", "manager_api_verify_tls": true,
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -1910,8 +1932,16 @@ func TestWazuhConfigurationIsTestedAndPersisted(t *testing.T) {
 		t.Fatalf("default vulnerabilities index = %#v, want %q",
 			savedConfiguration["vulnerabilities_index"], defaultVulnerabilitiesIndex)
 	}
+	if savedConfiguration["manager_api_url"] != managerAPI.URL ||
+		savedConfiguration["manager_api_username"] != "agent-reader" ||
+		savedConfiguration["manager_api_password_configured"] != true {
+		t.Fatalf("manager API configuration = %#v", savedConfiguration)
+	}
 	if _, exposesPassword := savedConfiguration["password"]; exposesPassword {
 		t.Fatal("Wazuh configuration response exposed the saved password")
+	}
+	if _, exposesPassword := savedConfiguration["manager_api_password"]; exposesPassword {
+		t.Fatal("Wazuh configuration response exposed the manager API password")
 	}
 	if _, exposesTenant := savedConfiguration["tenant_id"]; exposesTenant {
 		t.Fatal("Wazuh configuration response exposed a tenant setting")
@@ -1919,6 +1949,7 @@ func TestWazuhConfigurationIsTestedAndPersisted(t *testing.T) {
 
 	server.Close()
 	wazuh.Close()
+	managerAPI.Close()
 	if err := backend.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -1929,7 +1960,10 @@ func TestWazuhConfigurationIsTestedAndPersisted(t *testing.T) {
 	defer restarted.Close()
 	sources := restarted.wazuhSources()
 	if len(sources) != 1 || sources[0].Username != "reader" || sources[0].Password != "test-password" ||
-		sources[0].VulnerabilitiesIndex != defaultVulnerabilitiesIndex {
+		sources[0].VulnerabilitiesIndex != defaultVulnerabilitiesIndex ||
+		sources[0].ManagerAPIURL != managerAPI.URL ||
+		sources[0].ManagerAPIUsername != "agent-reader" ||
+		sources[0].ManagerAPIPassword != "manager-password" {
 		t.Fatalf("persisted Wazuh configuration = %#v", sources)
 	}
 }
@@ -1996,6 +2030,8 @@ func TestWazuhCredentialsAreEncryptedAndLegacyValuesMigrated(t *testing.T) {
 	source := WazuhSource{
 		TenantID: "tenant-a", URL: "https://indexer.example.lan:9200",
 		Username: "reader", Password: "secret-wazuh-password",
+		ManagerAPIURL:      "https://manager.example.lan:55000",
+		ManagerAPIUsername: "agent-reader", ManagerAPIPassword: "secret-manager-password",
 	}
 	if err := backend.setWazuhSources(context.Background(), []WazuhSource{source}); err != nil {
 		backend.Close()
@@ -2006,9 +2042,12 @@ func TestWazuhCredentialsAreEncryptedAndLegacyValuesMigrated(t *testing.T) {
 		backend.Close()
 		t.Fatal(err)
 	}
-	if strings.Contains(persisted, source.Password) || !strings.Contains(persisted, `"password_encrypted":true`) {
+	if strings.Contains(persisted, source.Password) ||
+		strings.Contains(persisted, source.ManagerAPIPassword) ||
+		!strings.Contains(persisted, `"password_encrypted":true`) ||
+		!strings.Contains(persisted, `"manager_api_password_encrypted":true`) {
 		backend.Close()
-		t.Fatal("Wazuh password was not encrypted in SQLite")
+		t.Fatal("Wazuh credentials were not encrypted in SQLite")
 	}
 	if err := backend.Close(); err != nil {
 		t.Fatal(err)
@@ -2054,14 +2093,18 @@ func TestWazuhCredentialsAreEncryptedAndLegacyValuesMigrated(t *testing.T) {
 	}
 	defer migrated.Close()
 	sources := migrated.wazuhSources()
-	if len(sources) != 1 || sources[0].Password != source.Password {
-		t.Fatalf("migrated Wazuh password = %#v, want the original password", sources)
+	if len(sources) != 1 || sources[0].Password != source.Password ||
+		sources[0].ManagerAPIPassword != source.ManagerAPIPassword {
+		t.Fatalf("migrated Wazuh credentials = %#v, want the original passwords", sources)
 	}
 	if err := migrated.db.QueryRow(`SELECT value FROM soc_settings WHERE key = 'wazuh_sources'`).Scan(&persisted); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(persisted, source.Password) || !strings.Contains(persisted, `"password_encrypted":true`) {
-		t.Fatal("legacy Wazuh password was not encrypted during migration")
+	if strings.Contains(persisted, source.Password) ||
+		strings.Contains(persisted, source.ManagerAPIPassword) ||
+		!strings.Contains(persisted, `"password_encrypted":true`) ||
+		!strings.Contains(persisted, `"manager_api_password_encrypted":true`) {
+		t.Fatal("legacy Wazuh credentials were not encrypted during migration")
 	}
 }
 
@@ -2246,57 +2289,44 @@ func TestVulnerabilityInventorySearchReturnsPrioritizedSoftwareOnly(t *testing.T
 	}
 }
 
-func TestVulnerabilityAgentsListCombinesConfiguredIndexes(t *testing.T) {
+func TestVulnerabilityAgentsListUsesCurrentManagerAgents(t *testing.T) {
 	backend := testBackend(t, "")
 	verifyTLS := true
-	wazuh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf("Wazuh request method = %s, want POST", r.Method)
-		}
-		var query map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&query); err != nil {
-			t.Errorf("decode Wazuh query: %v", err)
-		} else {
-			aggs, _ := query["aggs"].(map[string]any)
-			agentsAgg, _ := aggs["agents"].(map[string]any)
-			composite, _ := agentsAgg["composite"].(map[string]any)
-			if query["size"] != float64(0) ||
-				composite["size"] != float64(vulnerabilityAgentPageSize) ||
-				!strings.Contains(fmt.Sprint(query["query"]), "match_all") {
-				t.Errorf("agent-list query = %#v", query)
+	managerAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/security/user/authenticate":
+			username, password, ok := r.BasicAuth()
+			if r.Method != http.MethodPost || !ok ||
+				username != "agent-reader" || password != "manager-password" {
+				t.Errorf("manager API authentication = %s, credentials valid: %t", r.Method, ok)
 			}
-		}
-
-		switch {
-		case strings.Contains(r.URL.Path, "wazuh-alerts-*/_search"):
-			aggs, _ := query["aggs"].(map[string]any)
-			agentsAgg, _ := aggs["agents"].(map[string]any)
-			composite, _ := agentsAgg["composite"].(map[string]any)
-			after, hasAfter := composite["after"]
-			if hasAfter && strings.Contains(fmt.Sprint(after), "007") {
-				_, _ = w.Write([]byte(`{"aggregations":{"agents":{"buckets":[
-					{"key":{"agent_id":"008"},"details":{"hits":{"hits":[{"_source":{"agent":{"id":"008"},"host":{"name":"poste-sans-nom"}}}]}}}
-				]}}}`))
-			} else {
-				_, _ = w.Write([]byte(`{"aggregations":{"agents":{"buckets":[
-					{"key":{"agent_id":"007"},"details":{"hits":{"hits":[{"_source":{"agent":{"id":"007","name":"poste-test"}}}]}}}
-				],"after_key":{"agent_id":"007"}}}}`))
+			_, _ = w.Write([]byte(`{"data":{"token":"manager-api-token"},"error":0}`))
+		case "/agents":
+			if r.Method != http.MethodGet ||
+				r.URL.Query().Get("status") != "all" ||
+				r.URL.Query().Get("limit") != "500" ||
+				r.URL.Query().Get("offset") != "0" ||
+				r.Header.Get("Authorization") != "Bearer manager-api-token" {
+				t.Errorf("current agents request = %s %s, authorization %q",
+					r.Method, r.URL.String(), r.Header.Get("Authorization"))
 			}
-		case strings.Contains(r.URL.Path, defaultVulnerabilitiesIndex+"/_search"):
-			_, _ = w.Write([]byte(`{"aggregations":{"agents":{"buckets":[
-				{"key":{"agent_id":"007"},"details":{"hits":{"hits":[{"_source":{"agent":{"id":"007","ip":"192.0.2.7"}}}]}}},
-				{"key":{"agent_id":"009"},"details":{"hits":{"hits":[{"_source":{"agent":{"id":"009","name":"poste-vulnerable","ip":"192.0.2.9"}}}]}}}
-			]}}}`))
+			_, _ = w.Write([]byte(`{"data":{"affected_items":[
+				{"id":"007","name":"poste-test","ip":"192.0.2.7","status":"active"},
+				{"id":"008","name":"poste-déconnecté","ip":"192.0.2.8","status":"disconnected"}
+			],"total_affected_items":2,"total_failed_items":0,"failed_items":[]},"error":0}`))
 		default:
-			t.Errorf("unexpected Wazuh index path %q", r.URL.Path)
+			t.Errorf("unexpected manager API path %q", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
-	defer wazuh.Close()
+	defer managerAPI.Close()
 	if err := backend.setWazuhSources(context.Background(), []WazuhSource{{
-		TenantID: "tenant-a", URL: wazuh.URL, Username: "reader", Password: "test-password",
-		VerifyTLS: &verifyTLS, AlertsIndex: "wazuh-alerts-*",
-		VulnerabilitiesIndex: defaultVulnerabilitiesIndex, BatchSize: 100,
+		TenantID: "tenant-a", URL: "https://indexer.example.lan:9200",
+		Username: "index-reader", Password: "index-password", VerifyTLS: &verifyTLS,
+		ManagerAPIURL: managerAPI.URL, ManagerAPIUsername: "agent-reader",
+		ManagerAPIPassword: "manager-password", ManagerAPIVerifyTLS: &verifyTLS,
+		AlertsIndex: "wazuh-alerts-*", VulnerabilitiesIndex: defaultVulnerabilitiesIndex,
+		BatchSize: 100,
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -2317,18 +2347,55 @@ func TestVulnerabilityAgentsListCombinesConfiguredIndexes(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&agents); err != nil {
 		t.Fatal(err)
 	}
-	if response.StatusCode != http.StatusOK || len(agents) != 3 {
-		t.Fatalf("agent list = (%d, %#v), want three agents", response.StatusCode, agents)
+	if response.StatusCode != http.StatusOK || len(agents) != 2 {
+		t.Fatalf("agent list = (%d, %#v), want all two currently registered agents", response.StatusCode, agents)
 	}
 	agentsByID := make(map[string]vulnerabilityAgent, len(agents))
 	for _, agent := range agents {
 		agentsByID[agent.ID] = agent
 	}
 	if merged := agentsByID["007"]; merged.Name != "poste-test" || merged.IP != "192.0.2.7" {
-		t.Fatalf("merged agent = %#v", merged)
+		t.Fatalf("active agent = %#v", merged)
 	}
-	if agents[0].Name > agents[1].Name || agents[1].Name > agents[2].Name {
+	if disconnected := agentsByID["008"]; disconnected.Name != "poste-déconnecté" {
+		t.Fatalf("currently registered disconnected agent = %#v", disconnected)
+	}
+	if agents[0].Name > agents[1].Name {
 		t.Fatalf("agents are not sorted by name: %#v", agents)
+	}
+}
+
+func TestVulnerabilityAgentsRequiresManagerAPIInsteadOfUsingHistory(t *testing.T) {
+	backend := testBackend(t, "")
+	if err := backend.setWazuhSources(context.Background(), []WazuhSource{{
+		TenantID: "tenant-a", URL: "https://indexer.example.lan:9200",
+		Username: "index-reader", Password: "index-password",
+		AlertsIndex: "wazuh-alerts-*", VulnerabilitiesIndex: defaultVulnerabilitiesIndex,
+		BatchSize: 100,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(backend.Handler())
+	defer server.Close()
+
+	request, err := http.NewRequest(http.MethodGet, server.URL+"/api/vulnerabilities/agents", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+loginAdmin(t, server))
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var result map[string]string
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusServiceUnavailable ||
+		!strings.Contains(result["error"], "API du manager Wazuh") {
+		t.Fatalf("agent-list response = (%d, %#v), want an explicit API configuration error",
+			response.StatusCode, result)
 	}
 }
 

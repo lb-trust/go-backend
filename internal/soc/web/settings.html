@@ -33,6 +33,26 @@
       <p class="muted">Les groupes d’agents sont détectés dans les alertes et apparaissent automatiquement dans les filtres du dashboard.</p>
       <p class="muted">La configuration, y compris le mot de passe Wazuh, est conservée dans la base SQLite locale du service.</p>
       <form id="wazuh-form" class="admin-form">
+        <section class="wazuh-manager-api-fields">
+          <p class="eyebrow">LISTE DES AGENTS ACTUELS</p>
+          <p class="muted">La liste des agents des mises à jour est lue depuis l’API du manager, pas depuis l’historique de l’Indexer. Elle comprend les agents actuellement enregistrés, qu’ils soient connectés ou non. Cette connexion est distincte du compte Indexer ci-dessous.</p>
+          <div class="field-help-control">
+            <label for="wazuh-manager-api-url">URL de l’API du manager Wazuh</label>
+            <button class="info-toggle" type="button" aria-label="Aide pour l’API du manager Wazuh" aria-expanded="false" aria-controls="help-wazuh-manager-api">i</button>
+            <div class="field-help" id="help-wazuh-manager-api" role="tooltip" hidden>
+              <p>URL de base de l’API REST du manager, généralement <code>https://manager:55000</code>. Le compte doit avoir uniquement le droit de lecture des agents : action RBAC <code>agent:read</code>, ressource <code>agent:id:*</code>. Aucun droit de création, suppression ou administration n’est nécessaire.</p>
+            </div>
+          </div>
+          <input id="wazuh-manager-api-url" type="url" placeholder="https://manager.example.lan:55000">
+          <label for="wazuh-manager-api-username">Utilisateur API Wazuh (lecture des agents)</label>
+          <input id="wazuh-manager-api-username" autocomplete="username">
+          <label for="wazuh-manager-api-password">Mot de passe API Wazuh</label>
+          <input id="wazuh-manager-api-password" type="password" autocomplete="new-password">
+          <label class="inline-option" for="wazuh-manager-api-ignore-tls">
+            <input id="wazuh-manager-api-ignore-tls" type="checkbox">
+            Ignorer les erreurs du certificat TLS de l’API (non recommandé)
+          </label>
+        </section>
         <div class="field-help-control">
           <label for="wazuh-url">URL de Wazuh Indexer</label>
           <button class="info-toggle" type="button" aria-label="Aide pour l’URL Wazuh" aria-expanded="false" aria-controls="help-wazuh-url">i</button>

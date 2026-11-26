@@ -657,10 +657,14 @@ func (b *Backend) wazuhConfigurationHandler(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusOK, map[string]any{
 			"configured": true, "url": source.URL,
 			"username": source.Username, "verify_tls": source.VerifyTLS,
-			"alerts_index":          source.AlertsIndex,
-			"vulnerabilities_index": source.VulnerabilitiesIndex,
-			"batch_size":            source.BatchSize,
-			"password_configured":   source.Password != "",
+			"alerts_index":                    source.AlertsIndex,
+			"vulnerabilities_index":           source.VulnerabilitiesIndex,
+			"batch_size":                      source.BatchSize,
+			"password_configured":             source.Password != "",
+			"manager_api_url":                 source.ManagerAPIURL,
+			"manager_api_username":            source.ManagerAPIUsername,
+			"manager_api_verify_tls":          source.ManagerAPIVerifyTLS,
+			"manager_api_password_configured": source.ManagerAPIPassword != "",
 		})
 		return
 	}
@@ -676,6 +680,10 @@ func (b *Backend) wazuhConfigurationHandler(w http.ResponseWriter, r *http.Reque
 		AlertsIndex          string `json:"alerts_index"`
 		VulnerabilitiesIndex string `json:"vulnerabilities_index"`
 		BatchSize            int    `json:"batch_size"`
+		ManagerAPIURL        string `json:"manager_api_url"`
+		ManagerAPIUsername   string `json:"manager_api_username"`
+		ManagerAPIPassword   string `json:"manager_api_password"`
+		ManagerAPIVerifyTLS  *bool  `json:"manager_api_verify_tls"`
 	}
 	if err := decodeBody(w, r, &payload); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -697,12 +705,19 @@ func (b *Backend) wazuhConfigurationHandler(w http.ResponseWriter, r *http.Reque
 		source.URL == payload.URL && source.Username == payload.Username {
 		payload.Password = source.Password
 	}
+	if payload.ManagerAPIPassword == "" && source.ManagerAPIPassword != "" &&
+		source.ManagerAPIURL == payload.ManagerAPIURL &&
+		source.ManagerAPIUsername == payload.ManagerAPIUsername {
+		payload.ManagerAPIPassword = source.ManagerAPIPassword
+	}
 	source = WazuhSource{
 		TenantID: source.TenantID, URL: strings.TrimSpace(payload.URL),
 		Username: strings.TrimSpace(payload.Username), Password: payload.Password,
 		VerifyTLS: payload.VerifyTLS, AlertsIndex: strings.TrimSpace(payload.AlertsIndex),
 		VulnerabilitiesIndex: strings.TrimSpace(payload.VulnerabilitiesIndex),
-		BatchSize:            payload.BatchSize,
+		BatchSize:            payload.BatchSize, ManagerAPIURL: strings.TrimSpace(payload.ManagerAPIURL),
+		ManagerAPIUsername: strings.TrimSpace(payload.ManagerAPIUsername),
+		ManagerAPIPassword: payload.ManagerAPIPassword, ManagerAPIVerifyTLS: payload.ManagerAPIVerifyTLS,
 	}
 	if source.AlertsIndex == "" {
 		source.AlertsIndex = "wazuh-alerts-*"
@@ -717,7 +732,15 @@ func (b *Backend) wazuhConfigurationHandler(w http.ResponseWriter, r *http.Reque
 		verify := true
 		source.VerifyTLS = &verify
 	}
+	if source.ManagerAPIVerifyTLS == nil {
+		verify := true
+		source.ManagerAPIVerifyTLS = &verify
+	}
 	if err := validateWazuhSource(source); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateWazuhManagerAPI(source); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -733,6 +756,12 @@ func (b *Backend) wazuhConfigurationHandler(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadGateway,
 			"Vérification de l’index des vulnérabilités impossible : "+wazuhConfigurationFailure(err))
 		return
+	}
+	if source.ManagerAPIURL != "" {
+		if _, err := b.fetchCurrentWazuhAgents(r.Context(), source); err != nil {
+			writeError(w, http.StatusBadGateway, "Vérification de l’API du manager Wazuh impossible : "+err.Error())
+			return
+		}
 	}
 	if err := b.setWazuhSources(r.Context(), []WazuhSource{source}); err != nil {
 		writeInternalError(w, err)

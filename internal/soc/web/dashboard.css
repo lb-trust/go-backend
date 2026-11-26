@@ -49,6 +49,8 @@ h2 { font-size: 1.15rem; margin-bottom: 5px; }
 .account-menu nav a { border-radius: 5px; color: #344054; font-size: .85rem; padding: 9px 10px; text-decoration: none; }
 .account-menu nav a:hover { background: #f2f4f7; }
 .admin-form { display: grid; gap: 9px; max-width: 520px; }
+.wazuh-manager-api-fields { border-bottom: 1px solid #eaecf0; display: grid; gap: 9px; margin-bottom: 8px; padding-bottom: 16px; }
+.wazuh-manager-api-fields > p { margin-bottom: 0; }
 .admin-form input, .admin-form select { background: #fff; width: 100%; }
 .admin-form button { justify-self: start; margin-top: 6px; }
 .field-help-control { align-items: center; display: flex; gap: 7px; position: relative; width: max-content; max-width: 100%; }

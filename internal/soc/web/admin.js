@@ -211,6 +211,14 @@ if (wazuhForm) {
         document.querySelector("#wazuh-password").placeholder = configuration.password_configured
           ? "Laisser vide pour conserver le mot de passe"
           : "";
+        document.querySelector("#wazuh-manager-api-url").value = configuration.manager_api_url || "";
+        document.querySelector("#wazuh-manager-api-username").value = configuration.manager_api_username || "";
+        document.querySelector("#wazuh-manager-api-ignore-tls").checked =
+          configuration.manager_api_verify_tls === false;
+        document.querySelector("#wazuh-manager-api-password").placeholder =
+          configuration.manager_api_password_configured
+            ? "Laisser vide pour conserver le mot de passe"
+            : "";
         clearButton.hidden = false;
       }
     } catch (error) {
@@ -236,10 +244,17 @@ if (wazuhForm) {
           alerts_index: document.querySelector("#wazuh-index").value.trim(),
           vulnerabilities_index: document.querySelector("#wazuh-vulnerabilities-index").value.trim(),
           batch_size: Number(document.querySelector("#wazuh-batch-size").value),
+          manager_api_url: document.querySelector("#wazuh-manager-api-url").value.trim(),
+          manager_api_username: document.querySelector("#wazuh-manager-api-username").value.trim(),
+          manager_api_password: document.querySelector("#wazuh-manager-api-password").value,
+          manager_api_verify_tls: !document.querySelector("#wazuh-manager-api-ignore-tls").checked,
         }),
       });
       document.querySelector("#wazuh-password").value = "";
       document.querySelector("#wazuh-password").placeholder = "Laisser vide pour conserver le mot de passe";
+      document.querySelector("#wazuh-manager-api-password").value = "";
+      document.querySelector("#wazuh-manager-api-password").placeholder =
+        "Laisser vide pour conserver le mot de passe";
       clearButton.hidden = false;
       showMessage(message, "Connexion réussie ; configuration enregistrée.", true);
     } catch (error) {
@@ -258,6 +273,11 @@ if (wazuhForm) {
       document.querySelector("#wazuh-vulnerabilities-index").value = "wazuh-states-vulnerabilities-*";
       document.querySelector("#wazuh-batch-size").value = "100";
       document.querySelector("#wazuh-ignore-tls").checked = false;
+      document.querySelector("#wazuh-manager-api-url").value = "";
+      document.querySelector("#wazuh-manager-api-username").value = "";
+      document.querySelector("#wazuh-manager-api-password").value = "";
+      document.querySelector("#wazuh-manager-api-password").placeholder = "";
+      document.querySelector("#wazuh-manager-api-ignore-tls").checked = false;
       clearButton.hidden = true;
       showMessage(message, "Configuration Wazuh supprimée.", true);
     } catch (error) {

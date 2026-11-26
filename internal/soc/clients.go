@@ -91,6 +91,15 @@ func (b *Backend) wazuhHTTPClient(source WazuhSource) *http.Client {
 	return &http.Client{Timeout: b.httpClient.Timeout, Transport: transport}
 }
 
+func (b *Backend) wazuhManagerAPIHTTPClient(source WazuhSource) *http.Client {
+	if source.ManagerAPIVerifyTLS == nil || *source.ManagerAPIVerifyTLS {
+		return b.httpClient
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	return &http.Client{Timeout: b.httpClient.Timeout, Transport: transport}
+}
+
 func wazuhIndexSearchURL(origin, index string) (string, error) {
 	base, err := url.Parse(strings.TrimRight(origin, "/"))
 	if err != nil {

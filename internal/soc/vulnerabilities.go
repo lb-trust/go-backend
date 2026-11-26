@@ -9,13 +9,13 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 )
 
 const maxVulnerabilityDocuments = 10000
-const vulnerabilityAgentPageSize = 1000
 
 type vulnerableSoftware struct {
 	Name         string `json:"name"`
@@ -290,93 +290,109 @@ func (b *Backend) vulnerabilityAgentsHandler(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusServiceUnavailable, "aucune source Wazuh n’est configurée pour ce client")
 		return
 	}
+	if source.ManagerAPIURL == "" {
+		writeError(w, http.StatusServiceUnavailable,
+			"configurez l’API du manager Wazuh pour afficher les agents actuels")
+		return
+	}
+	if err := validateWazuhManagerAPI(*source); err != nil {
+		writeError(w, http.StatusServiceUnavailable,
+			"configurez l’API du manager Wazuh pour afficher les agents actuels")
+		return
+	}
 
-	agents, err := b.fetchVulnerabilityAgents(r.Context(), *source)
+	agents, err := b.fetchCurrentWazuhAgents(r.Context(), *source)
 	if err != nil {
-		log.Printf("lecture de la liste des agents Wazuh: %v", err)
-		writeError(w, http.StatusBadGateway, "impossible de lire la liste des agents dans Wazuh Indexer")
+		log.Printf("lecture des agents enregistrés via l’API Wazuh: %v", err)
+		writeError(w, http.StatusBadGateway, "impossible de lire les agents enregistrés via l’API du manager Wazuh")
 		return
 	}
 	writeJSON(w, http.StatusOK, agents)
 }
 
-func (b *Backend) fetchVulnerabilityAgents(ctx context.Context, source WazuhSource) ([]vulnerabilityAgent, error) {
-	alertsIndex := source.AlertsIndex
-	if alertsIndex == "" {
-		alertsIndex = "wazuh-alerts-*"
+func (b *Backend) fetchCurrentWazuhAgents(ctx context.Context, source WazuhSource) ([]vulnerabilityAgent, error) {
+	apiURL := strings.TrimRight(source.ManagerAPIURL, "/")
+	client := b.wazuhManagerAPIHTTPClient(source)
+	authRequest, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		apiURL+"/security/user/authenticate", nil)
+	if err != nil {
+		return nil, fmt.Errorf("créer la requête d’authentification à l’API Wazuh: %w", err)
 	}
-	vulnerabilitiesIndex := source.VulnerabilitiesIndex
-	if vulnerabilitiesIndex == "" {
-		vulnerabilitiesIndex = defaultVulnerabilitiesIndex
+	authRequest.SetBasicAuth(source.ManagerAPIUsername, source.ManagerAPIPassword)
+	authResponse, err := client.Do(authRequest)
+	if err != nil {
+		return nil, fmt.Errorf("contacter l’API du manager Wazuh: %w", err)
+	}
+	var authResult struct {
+		Data struct {
+			Token string `json:"token"`
+		} `json:"data"`
+	}
+	if authResponse.StatusCode < http.StatusOK || authResponse.StatusCode >= http.StatusMultipleChoices {
+		authResponse.Body.Close()
+		return nil, fmt.Errorf("l’API du manager Wazuh a refusé l’authentification (HTTP %d)", authResponse.StatusCode)
+	}
+	decodeErr := json.NewDecoder(io.LimitReader(authResponse.Body, 1<<20)).Decode(&authResult)
+	authResponse.Body.Close()
+	if decodeErr != nil {
+		return nil, fmt.Errorf("décoder la réponse d’authentification de l’API Wazuh: %w", decodeErr)
+	}
+	if authResult.Data.Token == "" {
+		return nil, errors.New("l’API du manager Wazuh n’a pas renvoyé de jeton")
 	}
 
 	agentsByID := make(map[string]vulnerabilityAgent)
-	for _, index := range []string{alertsIndex, vulnerabilitiesIndex} {
-		afterKey := ""
-		for {
-			composite := map[string]any{
-				"size": vulnerabilityAgentPageSize,
-				"sources": []any{
-					map[string]any{"agent_id": map[string]any{"terms": map[string]string{"field": "agent.id"}}},
-				},
+	const pageSize = 500
+	for offset := 0; ; {
+		query := url.Values{
+			"status": {"all"},
+			"limit":  {strconv.Itoa(pageSize)},
+			"offset": {strconv.Itoa(offset)},
+		}
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet,
+			apiURL+"/agents?"+query.Encode(), nil)
+		if err != nil {
+			return nil, fmt.Errorf("créer la requête des agents enregistrés: %w", err)
+		}
+		request.Header.Set("Authorization", "Bearer "+authResult.Data.Token)
+		response, err := client.Do(request)
+		if err != nil {
+			return nil, fmt.Errorf("lire les agents enregistrés dans l’API Wazuh: %w", err)
+		}
+		if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+			response.Body.Close()
+			return nil, fmt.Errorf("l’API du manager Wazuh a refusé la lecture des agents (HTTP %d)", response.StatusCode)
+		}
+		var result struct {
+			Data struct {
+				Agents []struct {
+					ID   string `json:"id"`
+					Name string `json:"name"`
+					IP   string `json:"ip"`
+				} `json:"affected_items"`
+				Total int `json:"total_affected_items"`
+			} `json:"data"`
+		}
+		decodeErr := json.NewDecoder(io.LimitReader(response.Body, 16<<20)).Decode(&result)
+		response.Body.Close()
+		if decodeErr != nil {
+			return nil, fmt.Errorf("décoder la liste des agents Wazuh: %w", decodeErr)
+		}
+		if result.Data.Total < 0 {
+			return nil, errors.New("l’API du manager Wazuh a renvoyé un total d’agents invalide")
+		}
+		for _, agent := range result.Data.Agents {
+			if agent.ID == "" {
+				continue
 			}
-			if afterKey != "" {
-				composite["after"] = map[string]string{"agent_id": afterKey}
-			}
-			result, err := b.searchWazuhIndex(ctx, source, index, map[string]any{
-				"size":  0,
-				"query": map[string]any{"match_all": map[string]any{}},
-				"aggs": map[string]any{
-					"agents": map[string]any{
-						"composite": composite,
-						"aggs": map[string]any{
-							"details": map[string]any{
-								"top_hits": map[string]any{
-									"size":    1,
-									"_source": []string{"agent.id", "agent.name", "agent.ip", "host.name", "host.ip"},
-								},
-							},
-						},
-					},
-				},
-			})
-			if err != nil {
-				return nil, err
-			}
-			if result.Aggregations.Agents == nil {
-				return nil, fmt.Errorf("Wazuh Indexer n’a pas renvoyé l’agrégation des agents")
-			}
-			for _, bucket := range result.Aggregations.Agents.Buckets {
-				agent := vulnerabilityAgent{ID: bucket.Key.AgentID}
-				found := vulnerabilityAgents(bucket.Details.Hits.Hits)
-				if len(found) > 0 {
-					agent.Name = found[0].Name
-					agent.IP = found[0].IP
-					if agent.ID == "" {
-						agent.ID = found[0].ID
-					}
-				}
-				if agent.ID == "" {
-					continue
-				}
-				current := agentsByID[agent.ID]
-				current.ID = agent.ID
-				if current.Name == "" {
-					current.Name = agent.Name
-				}
-				if current.IP == "" {
-					current.IP = agent.IP
-				}
-				agentsByID[agent.ID] = current
-			}
-			nextAfterKey := result.Aggregations.Agents.AfterKey.AgentID
-			if nextAfterKey == "" {
-				break
-			}
-			if nextAfterKey == afterKey {
-				return nil, fmt.Errorf("Wazuh Indexer n’a pas avancé dans la pagination des agents")
-			}
-			afterKey = nextAfterKey
+			agentsByID[agent.ID] = vulnerabilityAgent{ID: agent.ID, Name: agent.Name, IP: agent.IP}
+		}
+		offset += len(result.Data.Agents)
+		if offset >= result.Data.Total {
+			break
+		}
+		if len(result.Data.Agents) == 0 {
+			return nil, errors.New("l’API du manager Wazuh a renvoyé une page vide avant la fin de la liste")
 		}
 	}
 

@@ -37,6 +37,10 @@ type WazuhSource struct {
 	Username             string `json:"username"`
 	Password             string `json:"password"`
 	VerifyTLS            *bool  `json:"verify_tls"`
+	ManagerAPIURL        string `json:"manager_api_url"`
+	ManagerAPIUsername   string `json:"manager_api_username"`
+	ManagerAPIPassword   string `json:"manager_api_password"`
+	ManagerAPIVerifyTLS  *bool  `json:"manager_api_verify_tls"`
 	AlertsIndex          string `json:"alerts_index"`
 	VulnerabilitiesIndex string `json:"vulnerabilities_index"`
 	BatchSize            int    `json:"batch_size"`
@@ -121,8 +125,15 @@ func LoadConfig() (Config, error) {
 			verify := true
 			source.VerifyTLS = &verify
 		}
+		if source.ManagerAPIVerifyTLS == nil {
+			verify := true
+			source.ManagerAPIVerifyTLS = &verify
+		}
 		if err := validateURL(source.URL, false); err != nil {
 			return Config{}, fmt.Errorf("URL Wazuh invalide: %w", err)
+		}
+		if err := validateWazuhManagerAPI(*source); err != nil {
+			return Config{}, fmt.Errorf("WAZUH_SOURCES_JSON[%d]: %w", i, err)
 		}
 	}
 
@@ -212,6 +223,21 @@ func validateURL(raw string, requireHTTPS bool) error {
 	}
 	if parsed.Scheme != "https" && (requireHTTPS || parsed.Scheme != "http") {
 		return errors.New("HTTPS est requis")
+	}
+	return nil
+}
+
+func validateWazuhManagerAPI(source WazuhSource) error {
+	configured := source.ManagerAPIURL != "" ||
+		source.ManagerAPIUsername != "" || source.ManagerAPIPassword != ""
+	if !configured {
+		return nil
+	}
+	if source.ManagerAPIURL == "" || source.ManagerAPIUsername == "" || source.ManagerAPIPassword == "" {
+		return errors.New("l’URL, l’utilisateur et le mot de passe de l’API du manager Wazuh doivent être renseignés ensemble")
+	}
+	if err := validateURL(source.ManagerAPIURL, false); err != nil {
+		return fmt.Errorf("URL de l’API du manager Wazuh invalide: %w", err)
 	}
 	return nil
 }
