@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-//go:embed web/home.html web/home.js web/index.html web/dashboard.css web/dashboard.js web/maintenance.html web/maintenance.js web/accounts.html web/settings.html web/admin.js web/vulnerabilities.html web/vulnerabilities.js
+//go:embed web/home.html web/home.js web/index.html web/dashboard.css web/dashboard.js web/maintenance.html web/maintenance.js web/accounts.html web/settings.html web/admin.js web/vulnerabilities.html web/vulnerabilities.js web/account-menu.js
 var dashboardFiles embed.FS
 
 func dashboardHandler() http.Handler {

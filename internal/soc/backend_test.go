@@ -1254,6 +1254,15 @@ func TestAPIRequiresTenantTokenAndReturnsTenantData(t *testing.T) {
 		t.Fatalf("dashboard JavaScript status = %d, want %d", assetResponse.StatusCode, http.StatusOK)
 	}
 	assetResponse.Body.Close()
+	accountMenuAssetResponse, err := client.Get(server.URL + "/assets/account-menu.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accountMenuAssetResponse.StatusCode != http.StatusOK {
+		accountMenuAssetResponse.Body.Close()
+		t.Fatalf("account menu JavaScript status = %d, want %d", accountMenuAssetResponse.StatusCode, http.StatusOK)
+	}
+	accountMenuAssetResponse.Body.Close()
 	maintenanceAssetResponse, err := client.Get(server.URL + "/assets/maintenance.js")
 	if err != nil {
 		t.Fatal(err)
